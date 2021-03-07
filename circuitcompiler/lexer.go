@@ -1,32 +1,7 @@
 package circuitcompiler
 
-// This package provides a Lexer that functions similarly to Rob Pike's discussion
+// This package provides a Lexer that globalFunction similarly to Rob Pike's discussion
 // about lexer design in this [talk](https://www.youtube.com/watch?v=HxaD_trXwRE).
-//
-// You can define your token types by using the `lexer.TokenType` type (`int`) via
-//
-//     const (
-//             StringToken lexer.TokenType = iota
-//             IntegerToken
-//             // etc...
-//     )
-//
-// And then you define your own state functions (`lexer.StateFunc`) to handle
-// analyzing the string.
-//
-//     func StringState(l *lexer.Lexer) lexer.StateFunc {
-//             l.Next() // eat starting "
-//             l.Ignore() // drop current value
-//             while l.Peek() != '"' {
-//                     l.Next()
-//             }
-//             l.Emit(StringToken)
-//
-//             return SomeStateFunction
-//     }
-//
-// This Lexer is meant to emit tokens in such a fashion that it can be consumed
-// by go yacc.
 
 import (
 	"errors"
@@ -40,8 +15,7 @@ type StateFunc func(*Lexer) StateFunc
 type TokenType int
 
 const (
-	EOFRune    rune      = -1
-	EmptyToken TokenType = 0
+	EOFRune rune = -1
 )
 
 type Tokens struct {
@@ -49,12 +23,12 @@ type Tokens struct {
 }
 
 type Token struct {
-	Type  TokenType
-	Value string
+	Type       TokenType
+	Identifier string
 }
 
 func (ch Token) String() string {
-	return fmt.Sprintf("(%v <> %v)", ch.Value, ch.Type)
+	return fmt.Sprintf("(%v <> %v)", ch.Identifier, ch.Type)
 }
 
 func (t *Tokens) next() (r Token) {
@@ -104,18 +78,19 @@ func init() {
 	//}
 	keyWordMap = map[string]TokenType{
 		"return": RETURN,
-		"def":    FUNCTION_DEFINE,
 		"var":    VARIABLE_DECLARE,
 		"if":     IF,
-		"while":  WHILE,
+		"else":   ELSE,
 		"for":    FOR,
-		"func":   FUNCTION_DEFINE_Internal,
+		"func":   FUNCTION_DEFINE,
+		"import": IMPORT,
+		"public": PUBLIC,
 	}
 
 }
 
-var binOp = BinaryComperatorToken | ArithmeticOperatorToken | BooleanOperatorToken | BitOperatorToken | AssignmentOperatorToken
-var IN = IdentToken | ARGUMENT | VARIABLE_DECLARE | UNASIGNEDVAR
+var Operator = BinaryComperatorToken | ArithmeticOperatorToken | BooleanOperatorToken | BitOperatorToken | AssignmentOperatorToken
+var IN = IDENTIFIER_VARIABLE | ARGUMENT | VARIABLE_DECLARE | UNASIGNEDVAR
 
 const (
 	NumberToken TokenType = 1 << iota
@@ -128,21 +103,23 @@ const (
 	BinaryComperatorToken
 	//UnaryOperatorToken
 	EOF
-	IdentToken
-
+	IMPORT
+	PUBLIC
+	IDENTIFIER_VARIABLE
 	FUNCTION_DEFINE
-	FUNCTION_DEFINE_Internal
 	FUNCTION_CALL
+	IF_FUNCTION_CALL
 	VARIABLE_DECLARE
 	VARIABLE_OVERLOAD
-	ARRAY_Define
+	ARRAY_DECLARE
 	ARRAY_CALL
 	UNASIGNEDVAR
 	ARGUMENT
 	IF
-	WHILE
+	ELSE
 	FOR
 	NESTED_STATEMENT_END
+	IF_ELSE_CHAIN_END
 	RETURN
 )
 
@@ -151,7 +128,7 @@ func (ch TokenType) String() string {
 
 	case UNASIGNEDVAR:
 		return "UNASIGNEDVAR"
-	case IdentToken:
+	case IDENTIFIER_VARIABLE:
 		return "identifier"
 	case CommentToken:
 		return "commentToken"
@@ -165,8 +142,8 @@ func (ch TokenType) String() string {
 		return "BitOperatorToken"
 	case BinaryComperatorToken:
 		return "BinaryComperatorToken"
-	//case	UnaryOperatorToken:
-	//	return "UnaryOperatorToken"
+	case IMPORT:
+		return "import"
 	case NESTED_STATEMENT_END:
 		return "For ends"
 	case SyntaxToken:
@@ -175,28 +152,30 @@ func (ch TokenType) String() string {
 		return "numberToken"
 	case FUNCTION_DEFINE:
 		return "def"
-	case FUNCTION_DEFINE_Internal:
-		return "func"
 	case FUNCTION_CALL:
 		return "call"
+	case IF_FUNCTION_CALL:
+		return "if_function_call"
 	case VARIABLE_DECLARE:
 		return "var"
 	case VARIABLE_OVERLOAD:
 		return "VARIABLE_OVERLOAD"
 	case IF:
 		return "if"
-	case WHILE:
-		return "while"
+	case ELSE:
+		return "else"
 	case FOR:
-		return "FOR"
+		return "for"
 	case ARGUMENT:
 		return "Argument"
 	case RETURN:
 		return "RETURN"
 	case ARRAY_CALL:
 		return "arrayAccess"
-	case ARRAY_Define:
+	case ARRAY_DECLARE:
 		return "arrayDefine"
+	case PUBLIC:
+		return "public"
 
 	default:
 		panic("unknown TOken")
@@ -257,8 +236,8 @@ func (l *Lexer) Current() string {
 // value into the tokens channel.
 func (l *Lexer) Emit(t TokenType) {
 	tok := Token{
-		Type:  t,
-		Value: l.Current(),
+		Type:       t,
+		Identifier: l.Current(),
 	}
 	l.tokens <- tok
 	l.start = l.position
@@ -345,9 +324,9 @@ func (l *Lexer) Take(chars string) {
 func (l *Lexer) NextToken() (*Token, bool) {
 	if tok, ok := <-l.tokens; ok {
 		//this way we only return the first \n we encounter, if multiple \n\n\n.. follow, we skip the consecutive ones
-		if tok.Value == "\n" && !l.alreadyNewline {
+		if tok.Identifier == "\n" && !l.alreadyNewline {
 			l.alreadyNewline = true
-		} else if tok.Value == "\n" && l.alreadyNewline {
+		} else if tok.Identifier == "\n" && l.alreadyNewline {
 			return l.NextToken()
 		} else {
 			l.alreadyNewline = false
@@ -400,7 +379,7 @@ func NumberState(l *Lexer) StateFunc {
 func readIdent(l *Lexer) {
 
 	r := l.Next()
-	for isLetter(r) || r == '_' {
+	for isLetter(r) || isDigit(r) || r == '_' {
 		r = l.Next()
 	}
 	l.Rewind()
@@ -418,25 +397,40 @@ func IdentState(l *Lexer) StateFunc {
 
 	if isDigit(peek) {
 		return NumberState
-	} else if strings.ContainsRune(syntaxTokens, peek) {
+	}
+	if strings.ContainsRune(syntaxTokens, peek) {
 		l.Next()
 		l.Emit(SyntaxToken)
 		return ProbablyWhitespaceState
-	} else if val, ex := operationMap[string(peek)]; ex {
+	}
 
-		//look if its a operators that has two runes (==,+=,..)
-		if val, ex := operationMap[l.PeekTwo()]; ex {
+	if peek == '"' {
+		l.Next()
+		l.Ignore()
+		for l.Peek() != '"' { // we read everything inside " ", used for import
 			l.Next()
-			l.Next()
-			l.Emit(val)
-			return ProbablyWhitespaceState
 		}
+		l.Emit(IDENTIFIER_VARIABLE)
+		l.Next()
+		l.Ignore()
+		return ProbablyWhitespaceState
+	}
 
+	//look if its a operators that has two runes (==,+=,..)
+	if val, ex := operationMap[l.PeekTwo()]; ex {
+		l.Next()
 		l.Next()
 		l.Emit(val)
 		return ProbablyWhitespaceState
+	}
 
-	} else if peek == commentToken {
+	if val, ex := operationMap[string(peek)]; ex {
+		l.Next()
+		l.Emit(val)
+		return ProbablyWhitespaceState
+	}
+
+	if peek == commentToken {
 		readCommentLine(l)
 		l.Emit(CommentToken)
 		return WhitespaceState
@@ -449,6 +443,7 @@ func IdentState(l *Lexer) StateFunc {
 		l.Emit(val)
 		return ProbablyWhitespaceState
 	}
+
 	peek = l.Peek()
 	if peek == '(' {
 		//l.Next()
@@ -458,7 +453,7 @@ func IdentState(l *Lexer) StateFunc {
 
 	//it wasnt a keyword, so we assume its an identifier
 	//identifiers do not require a whitespace (like func foo(), has '(' after identifier 'foo')
-	l.Emit(IdentToken)
+	l.Emit(IDENTIFIER_VARIABLE)
 	return ProbablyWhitespaceState
 }
 

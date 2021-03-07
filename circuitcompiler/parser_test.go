@@ -2,12 +2,14 @@ package circuitcompiler
 
 import (
 	"fmt"
-	"math/big"
 	"testing"
 )
 
-//just a big prime
-var Order,_ = new(big.Int).SetString("21888242871839275222246405745257275088548364400416034343698204186575808495617",10)
+func TestBuild(t *testing.T) {
+	c := []string{}
+	ArrayStringBuild([]int64{2, 3, 4}, "", &c)
+	fmt.Println(c)
+}
 
 func Test_Parser(t *testing.T) {
 
@@ -33,32 +35,32 @@ func Test_Parser(t *testing.T) {
 	`
 	fmt.Println(code)
 
-	Parse(code, Order)
+	Parse(code, false)
 }
 
 //only to see the difference between the split funcitons
 func TestParser_SplitAt(t *testing.T) {
 	toks := []Token{
 		{
-			Value: "a",
+			Identifier: "a",
 		},
 		{
-			Value: "b",
+			Identifier: "b",
 		},
 		{
-			Value: "c",
+			Identifier: "c",
 		},
 		{
-			Value: "a",
+			Identifier: "a",
 		},
 		{
-			Value: "e",
+			Identifier: "e",
 		},
 		{
-			Value: ")",
+			Identifier: ")",
 		},
 		{
-			Value: "a",
+			Identifier: "a",
 		},
 	}
 
@@ -74,25 +76,25 @@ func TestParser_SplitAt(t *testing.T) {
 func TestParser_StripOfBrackets(t *testing.T) {
 	toks := []Token{
 		{
-			Value: "(",
+			Identifier: "(",
 		},
 		{
-			Value: "b",
+			Identifier: "b",
 		},
 		{
-			Value: "c",
+			Identifier: "c",
 		},
 		{
-			Value: "a",
+			Identifier: "a",
 		},
 		{
-			Value: "e",
+			Identifier: "e",
 		},
 		{
-			Value: "g",
+			Identifier: "g",
 		},
 		{
-			Value: ")",
+			Identifier: ")",
 		},
 	}
 	fmt.Println(toks)

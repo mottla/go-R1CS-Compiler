@@ -1,89 +1,221 @@
-#R1CS Compiler (Help wanted)
-
-Compile a special purpose language into the Rank 1 Constraint System.
-This is very usefull for general purpose prove systems like zkSNARKs.
-The process chain goes as follows:
-- we translate our own special purpose language into an arithmetic circuit defined over a finite field
-- the translate the arithmetic circuit into the desired R1CS form
-
+# go-R1CS Compiler
+**UNDER CONSTRUCTION**
 
 **Circuit Language**
-The compiler is fully written in go.
-The language aims to be similar to go.
-Currently supported:
-- declare multiple functions via:
- func identifier (arguments...){...}
-- declare variable: var x = expression
-- variable overloading: x = expression
-- array declaration: var k[]={expression,expression,..}
-- equality check. call equal(a,b), to ensure that a is equal to b at a given point of code execution.
- use this to verify signatures etc.
- - for loop
- - functions are first class entities
+This toolchain comes along with a compiler fully written in go.
+My goal was, to create a compiler for a language that is as close to golang as possible.
+The language supports functional paradigm. Functions and field elements are the only first class citizen e.g.
+functions can be passed as arguments (see example).
+Due to the nature of zkSNARKs (only programs of static size) some things such as dynamic looping, jumps, dynamic array access etc. cannot be supported.
 
 This language then gets compiled into a R1CS form, with focus on gate reduction.
 We reuse gates whenever possible, exploit commutative properties of the gates, extract constant factors as long as possible etc.
+# Language
 
-**Not yet supported**
-- support for conditional statements
-- binary operations on/with variables (the for-loop conditions a<b etc. are translated during pre compiling, but not part of the R1CS)
-- storing R1CS in sparse representation
-
-**Example** 
-
-call Parse with the program code as a string, and tie FieldOrder as *big.Int (must be a prime)
+## main
+every program starts with the function 'main' 
 ```
-program := Parse(code, FieldOrder)
+func main(){
+#this is a comment
+}
 ```
-Perform the compilation to arithmetic circuit gates
+main can be fed with an arbitrary amount of single arguments and n-dimensional static size arrays of single values
 ```
-gates := program.CompileToGates()
+func main(a,b[2],c[3][42],d){
+}
+```
+## Declare public inputs
+in order to declare, which of the main inputs will be part of the public statement of the SNARK, write
+```
+func main(a,b[2],c[3][42],d){
+    public{
+        a, b[1],c[0][0]
+    }
+}
+```
+## variables
+expressions need to be assigned, passed as arguments or returned. They cannot be unasigned (as in Golang)
+```
+func main(x){
+    #constants
+    var purposeOfLive = 42*17
+    #variable
+    var xSquared = x*x
+    return purposeOfLive*xSquared
+}
+```
+also valid
+```
+func main(x){   
+    var purposeOfLive = 42*17   
+    var xSquared = x*x
+    return doSomething(purposeOfLive*xSquared)
+}
+func doSomething(a){
+    ....
+}
 ```
 
-final step from gates to R1CS
+invalid however
 ```
-r1cs := program.GatesToR1CS(gates)
+func main(x){
+    #constants
+    var purposeOfLive = 42*17
+    #variable
+    var xSquared = x*x
+    purposeOfLive*xSquared #missing assignment!!
+    return 
+}
 ```
-
-A full example of code and the corresponding output:
+## Declare Functions
+functions can be declared outside the scope of main
 ```
-	def main(x,z,w) {
-		var arra[]={x,1,2,3}
-        #we overload the function mul
-		var mul = func(a,b){
-			return x*b*7
-		}
-		var a =1
-		var c = w
-		
-		for( a<3;a=a+1){
-			var b = 3
-			for( b<4;b=b+2){
-				c = mul(c,c)
-			}				
-		}
+func main(x){
+    ...   
+}
+func foo(input){
+}
+```
+functions can also be declared inside the scope of a function via
+```
+func asdf(...){
+    func foo(...){
+      ..
+    }   
+    #call foo inside asdf with foo(args) 
+}
+```
+equivalently
+```
+func asdf(...){
+    var foo = func(...){
+      ..
+    }    
+}
+```
+## Functions as arguments
+functions can be passed as arguments
+```
+func main(x){
+    var multiplyWith5 = func(a){return a*5}
+    executeFkt(multiplyWith5,x) # we execute multiplyWith5 now in the executeFkt
+}
+func executeFkt(fkt,input){
+    #fkt must be a function, which takes at least one argument
+    return fkt(input)
+}
+```
+## Function preloading
+functions can be partially executed
+```
+func main(x){
+    var multiply = func(a,b){return a*b}
+    var multiplyBy5 = multiply(5)
+    multiplyBy5(x) #is now the same as multiply(5,x) 
+}
+```
+functions return functions, as long as they are not completely filled with all required inputs
+(constants are also functions, but the empty () can be omitted. everything is a function. even the universe)
+## Loop
+for those who like loops write
+```
+for ( staticBooleanComparisonExpression ; incrementStatement){
+}
+```
+example:
+```
+func main(x){
+    var i = 0       #declare the running variable outside
+    for ( i <= 43 ; i = i+1){  #we dont support ++, +=, -=, etc.. currently
+    }
+}
+```
+## if-else if-else
+in order to create braching conditions, write:
+```
+if expression1{ 
+    ...
+}else if expression2{
+    ...
+}else if expression3{
+    ...
+}else{
+    ...
+}
+```
+note that we currently only support static decidable branching conditions
 
-		#arra[2]=3
-		var k = mul(z,z)
-		var l = k*k
-		return l*(k*arra[2])*x*x
-	}
+## arrays
+declare an array with
+```
+var myArray[] = {a,b,3}
+```
+access myArray with
+```
+myArray[x]
+```
+where x can be 0,1,2 in this example.
 
-	def mul(a,b){
-	    return a*b
-	}
+# SNARK stuff
+## euquality assertion gate
+in order to create an equality assertion constraint write
+```
+equal(expression1,expression2)
+```
+example: in order to ensure that the user knew x,y s.t. x= 5y in zero Knowledge write
+```
+func main(x,y){
+   equal(x,5y)
+}
+```
+## split 
+to split a value into its bit representatives write
+```
+SPLIT(x)
+```
+now the i'th bit of x can be accessed with x[i], where x[0] is the least significant bit
 
 
-R1SC form of the code above. 
-Note that the big numbers are because we do arithmetic on a finite field and we extract factors as long as possible to reduce gates.
-so inverses and negative numbers are likely huge.
+## Example of classic SNARK
 
-[[0 0 0 1 0 0 0 0 0 0 0] [0 0 0 0 1 0 0 0 0 0 0] [0 0 1 0 0 0 0 0 0 0 0] [0 1 0 0 0 0 0 0 0 0 0] [0 0 0 0 0 0 1 0 0 0 0] [0 0 0 0 0 0 1 0 0 0 0] [0 0 0 0 0 0 0 0 1 0 0]]
-[[0 0 0 1 0 0 0 0 0 0 0] [0 1 0 0 0 0 0 0 0 0 0] [0 1 0 0 0 0 0 0 0 0 0] [0 1 0 0 0 0 0 0 0 0 0] [0 0 0 0 0 0 0 1 0 0 0] [0 0 0 0 0 0 1 0 0 0 0] [0 0 0 0 0 0 0 0 0 1 0]]
-[[0 0 0 0 1 0 0 0 0 0 0] [0 0 0 0 0 3126891838834182174606629392179610726935480628630862049099743455225115499374 0 0 0 0 0] [0 0 0 0 0 0 1 0 0 0 0] [0 0 0 0 0 0 0 1 0 0 0] [0 0 0 0 0 0 0 0 1 0 0] [0 0 0 0 0 0 0 0 0 1 0] [0 0 0 0 0 0 0 0 0 0 10752679078439993804514633726168661377318948692332658270883811677661876768255]]
+
+```
+#comment
+#every programm need a main with arbitrarily many field elements as arguments
+func main(x){
+   
+    #functions can be declared within functions
+    var a = func(i){
+        if i == 0 {
+            return
+        }        
+        return x*a(i-1)			
+    }
+    
+    var b = 7
+    var c = 123 * b    
+    return mul(1/c,a(array[3]*2))
+}
+
+var xx = 4
+var array[] = {1,4,7,xx}
+
+func mul(a,b){
+    return a*b
+}
+```
+R1SC form of the code above (last constraint and last two witnesses are due to randomization. Not needed if Jenns Groths scheme is applied):
+
+```
+[[0 1 0 0 0 0 0 0 0 0 0] [0 0 1 0 0 0 0 0 0 0 0] [0 0 0 1 0 0 0 0 0 0 0] [0 0 0 0 1 0 0 0 0 0 0] [0 0 0 0 0 1 0 0 0 0 0] [0 0 0 0 0 0 1 0 0 0 0] [0 0 0 0 0 0 0 1 0 0 0] [0 0 0 0 0 0 0 0 0 1 0]]
+[[0 1 0 0 0 0 0 0 0 0 0] [0 1 0 0 0 0 0 0 0 0 0] [0 1 0 0 0 0 0 0 0 0 0] [0 1 0 0 0 0 0 0 0 0 0] [0 1 0 0 0 0 0 0 0 0 0] [0 1 0 0 0 0 0 0 0 0 0] [0 1 0 0 0 0 0 0 0 0 0] [0 0 0 0 0 0 0 0 0 1 0]]
+[[0 0 1 0 0 0 0 0 0 0 0] [0 0 0 1 0 0 0 0 0 0 0] [0 0 0 0 1 0 0 0 0 0 0] [0 0 0 0 0 1 0 0 0 0 0] [0 0 0 0 0 0 1 0 0 0 0] [0 0 0 0 0 0 0 1 0 0 0] [0 0 0 0 0 0 0 0 861 0 0] [0 0 0 0 0 0 0 0 0 0 1]]
+```
+Calculate the witness given the R1CS 
 input
-[3 2 328329]
+
+input
+[(x,3)]
 witness
-[1 3 2 328329 107799932241 2263798577061 6 9 54 36 1333584]
---- PASS: TestCorrectness (0.00s)
-PASS
+[1 3 9 27 81 243 729 2187 762656546057117603562592534677953835837922104544112694902376452493930609611 812283518468366721095433750743019157728318690555355044294444169641986292 15488755034149214877756480202726987801042521325895567363610570018460600916982]
+

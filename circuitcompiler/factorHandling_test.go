@@ -50,13 +50,13 @@ package circuitcompiler
 //	facNeutral := factors{factor{multiplicative: [2]int{8, 7}}, factor{multiplicative: [2]int{9, 3}}}
 //	facNeutral2 := factors{factor{multiplicative: [2]int{9, 1}}, factor{multiplicative: [2]int{13, 7}}}
 //	fmt.Println(factorsSignature(facNeutral, facNeutral2))
-//	f, fc := extractGCD(facNeutral)
-//	fmt.Println(f)
+//	F, fc := extractGCD(facNeutral)
+//	fmt.Println(F)
 //	fmt.Println(fc)
 //
 //	f2, _ := extractGCD(facNeutral2)
-//	fmt.Println(f)
+//	fmt.Println(F)
 //	fmt.Println(fc)
 //	fmt.Println(factorsSignature(facNeutral, facNeutral2))
-//	fmt.Println(factorsSignature(f, f2))
+//	fmt.Println(factorsSignature(F, f2))
 //}

@@ -13,9 +13,11 @@ func Test_LexerError2(t *testing.T) {
 	//	return  d `
 	//
 	code := `
-	def main( x  ,  z ) {
-		var a= B(3)+x
-		return a(x)*b(z)
+import "asdf"
+	func main( x  ,  z ) {
+		if 3 < 4{
+		}
+		var a = func(x){return x}
 	}
 
 `
@@ -25,7 +27,7 @@ func Test_LexerError2(t *testing.T) {
 	l.Start()
 	tok, done := l.NextToken()
 	for !done {
-		fmt.Printf("%v , %q \n", tok.Type, tok.Value)
+		fmt.Printf("%v , %q \n", tok.Type, tok.Identifier)
 		tok, done = l.NextToken()
 	}
 
