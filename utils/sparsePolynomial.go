@@ -112,11 +112,6 @@ func (fq Fq) EvalSparsePoly(poly *AvlTree, at *big.Int) (result *big.Int) {
 	return result
 }
 
-//euclid returns q,r s.t. a=bq+r
-func euclid(a, b uint) (q, r uint) {
-	return a / b, a % b
-}
-
 // Sub subtracts two polinomials over the Finite Field
 func (fq Fq) SubToSparse(a, b *AvlTree) *AvlTree {
 

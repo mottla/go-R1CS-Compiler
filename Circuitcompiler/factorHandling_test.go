@@ -1,4 +1,4 @@
-package circuitcompiler
+package Circuitcompiler
 
 //factors are essential to identify, if a specific Gate has been computed already
 //eg. if we can extract a factor from a Gate that is independent of commutativity, multiplicativitz we will do much better, in finding and reusing old outputs do

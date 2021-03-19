@@ -3,7 +3,7 @@ package zkSNARK
 import (
 	"bytes"
 	"fmt"
-	"github.com/mottla/go-R1CS-Compiler/circuitcompiler"
+	"github.com/mottla/go-R1CS-Compiler/Circuitcompiler"
 	bn256 "github.com/mottla/go-R1CS-Compiler/pairing"
 	"github.com/mottla/go-R1CS-Compiler/utils"
 	"math/big"
@@ -59,7 +59,7 @@ type Setup struct {
 		Kgamma *big.Int
 		Kdelta *big.Int
 	}
-
+	fftParas *utils.FFT_PrecomputedParas
 	// public
 	Pk Pk
 	//Vk Vk
@@ -73,7 +73,7 @@ type Proof struct {
 }
 
 // CombinePolynomials combine the given polynomials arrays into one, also returns the P(x)
-func CombinePolynomials2(witness []*big.Int, TransposedR1cs *circuitcompiler.R1CSTransposed) (Px []*big.Int) {
+func CombinePolynomials2(witness []*big.Int, TransposedR1cs *Circuitcompiler.R1CSTransposed) (Px []*big.Int) {
 
 	pf := utils.Field.PolynomialField
 
@@ -93,82 +93,37 @@ func CombinePolynomials2(witness []*big.Int, TransposedR1cs *circuitcompiler.R1C
 }
 
 // CombinePolynomials combine the given polynomials arrays into one, also returns the P(x)
-//func CombinePolynomials_Efficient(witness []*big.Int, TransposedR1cs *circuitcompiler.R1CSTransposed) (h []*big.Int) {
-//
-//	pf := utils.Field.PolynomialField
-//
-//	L := pf.AddPolynomials(pf.LinearCombine(TransposedR1cs.L, witness))
-//	R := pf.AddPolynomials(pf.LinearCombine(TransposedR1cs.R, witness))
-//	//E := pf.AddPolynomials(pf.LinearCombine(TransposedR1cs.E, witness))
-//	O := pf.AddPolynomials(pf.LinearCombine(TransposedR1cs.O, witness))
-//	//fmt.Println(L)
-//	//fmt.Println(R)
-//	//fmt.Println(O)
-//	L = pf.InvDFFT(L, nil)
-//	R = pf.InvDFFT(R, nil)
-//
-//	O = pf.InvDFFT(O, nil)
-//
-//	//var mG_pointsVec []*big.Int
-//	//for i := 0; i < len(E); i++ {
-//	//	p := g1ScalarBaseMultiply(E[i])
-//	//	mG_pointsVec = append(mG_pointsVec, p.X())
-//	//}
-//	//Gx := pf.InvDFFT(mG_pointsVec,nil)
-//
-//	//fmt.Println(L)
-//	//fmt.Println(R)
-//	//fmt.Println(O)
-//	//evalueate the polynomials at the coset of roots
-//	//baseShift, _ := pf.F.Rand()
-//	baseShift, _ := new(big.Int).SetString("5383492944003596452865514984374831749991531321222585094451378096503719109645", 10)
-//	L = pf.DFFT(L, baseShift)
-//	R = pf.DFFT(R, baseShift)
-//	//E= pf.DFFT(E,baseShift)
-//	O = pf.DFFT(O, baseShift)
-//
-//	//fmt.Println(L)
-//	//fmt.Println(R)
-//	//fmt.Println(O)
-//	h = pf.PointwiseMultiplication(L, R)
-//	//h = pf.PointwiseAdd(h, Gx)
-//	h = pf.PointwiseSub(h, O)
-//
-//	adicity, factor := pf.F.Adicity()
-//
-//	bit := bits.Len(uint(len(h)))
-//	if !utils.IsPowerTwo(uint64(len(h))) {
-//		panic("cannot happen")
-//	}
-//	//if len was a power of two, bits.Len gave us the bit position by +1 bigger
-//	bit = bit - 1
-//	//now determine the root of unity
-//	// exponent = c*2^(adicity-(bit+1))
-//	// now for any k in Field, (k^(exponent))^2^(bit+1)==1 mod P
-//	exponent := pf.F.Mul(factor,
-//		new(big.Int).Lsh(new(big.Int).SetInt64(1), uint(adicity-(bit))))
-//
-//	alpha_power_i := pf.F.Exp(baseShift, exponent)
-//	two_power_bit := new(big.Int).Lsh(new(big.Int).SetInt64(1), uint(bit)) //2^bit
-//	if pf.F.Exp(alpha_power_i, two_power_bit).Cmp(new(big.Int).SetInt64(1)) != 0 {
-//		panic("(k^(exponent))^2^(bit+1) != 1 mod P ")
-//	}
-//	//
-//	//
-//	base := new(big.Int).SetInt64(1)
-//
-//	for k, v := range h {
-//		pos := pf.F.Mul(base, baseShift)
-//		f := pf.F.Sub(pf.F.Exp(pos, two_power_bit), new(big.Int).SetInt64(1))
-//		h[k] = pf.F.Div(v, f)
-//		alpha_power_i = pf.F.Mul(base, alpha_power_i)
-//	}
-//
-//	return pf.InvDFFT(h, baseShift)
-//}
+func CombinePolynomials_Efficient(ft *utils.FFT_PrecomputedParas, witness []*big.Int, TransposedR1cs *Circuitcompiler.R1CSTransposed) (h []*big.Int) {
+
+	pf := utils.Field.PolynomialField
+
+	L := pf.AddPolynomials(pf.LinearCombine(TransposedR1cs.L, witness))
+	R := pf.AddPolynomials(pf.LinearCombine(TransposedR1cs.R, witness))
+	O := pf.AddPolynomials(pf.LinearCombine(TransposedR1cs.O, witness))
+
+	//compute the Ng-1 coefficients
+	L = ft.InvDFFT(L, nil)
+	R = ft.InvDFFT(R, nil)
+	O = ft.InvDFFT(O, nil)
+
+	//evalueate the polynomials at the coset of roots
+
+	baseShift := new(big.Int).SetInt64(3)
+	L = ft.DFFT(L, baseShift)
+	R = ft.DFFT(R, baseShift)
+	O = ft.DFFT(O, baseShift)
+
+	h = pf.PointwiseMultiplication(L, R)
+	h = pf.PointwiseSub(h, O)
+
+	Zs := pf.F.Inverse(pf.F.EvalPoly(ft.Domain, baseShift)) // domain poly at shifted roots of unity is everywhere the same
+	h = pf.MulScalar(h, Zs)
+
+	return ft.InvDFFT(h, baseShift)
+}
 
 //CombinePolynomials combine the given polynomials arrays into one, also returns the P(x)
-func CombineSparsePolynomials(witness []*big.Int, TransposedR1cs *circuitcompiler.R1CSsPARSETransposed) (Px *utils.AvlTree) {
+func CombineSparsePolynomials(witness []*big.Int, TransposedR1cs *Circuitcompiler.R1CSsPARSETransposed) (Px *utils.AvlTree) {
 
 	pf := utils.Field.ArithmeticField
 
@@ -194,122 +149,128 @@ func g2ScalarBaseMultiply(in *big.Int) *bn256.G2 {
 }
 
 // GenerateTrustedSetup generates the Trusted Setup from a compiled function. The Setup.Toxic sub data structure must be destroyed
-//func GenerateTrustedSetupEfficient(publicinputs int, r1cs *circuitcompiler.R1CSTransposed) (*Setup, error) {
-//	gates, witnessLength := r1cs.NumberOfGates, r1cs.WitnessLength
-//
-//	//this bastard is heavy to compute. we interpolate all the polynomials
-//	fmt.Println("start FFT interpolation...")
-//	before := time.Now()
-//	Li, Ri, Oi := r1cs.R1CSToEAP_FFT()
-//	fmt.Println("interpolation done in ", time.Since(before))
-//	if len(Li) != len(Ri) || len(Ri) != len(Oi) {
-//		panic("amount of polynimials  missmatch")
-//	}
-//	if publicinputs >= len(Li) {
-//		panic("to moany public parameters")
-//	}
-//
-//	var setup = new(Setup)
-//	var err error
-//	fields := utils.Field
-//	// generate random t value
-//	setup.Toxic.x, err = fields.ArithmeticField.Rand()
-//	if err != nil {
-//		panic("random failed")
-//	}
-//	//TODO this is why my scheme sucks. we can only have x in {0,..,len(gates)} and not from the entire field. This destroys security
-//	//setup.Toxic.x = big.NewInt(rand.Int63n(int64(gates)))
-//
-//	setup.Toxic.Kalpha, err = fields.ArithmeticField.Rand()
-//	if err != nil {
-//		panic("random failed")
-//	}
-//	setup.Toxic.Kbeta, err = fields.ArithmeticField.Rand()
-//	if err != nil {
-//		panic("random failed")
-//	}
-//	setup.Toxic.Kgamma, err = fields.ArithmeticField.Rand()
-//	if err != nil {
-//		panic("random failed")
-//	}
-//	setup.Toxic.Kdelta, err = fields.ArithmeticField.Rand()
-//	if err != nil {
-//		panic("random failed")
-//	}
-//
-//	//generate the domain polynomial
-//	//TODO but now we have all roots of unity as roots
-//	//but i think thats what we want
-//	Domain := fields.PolynomialField.DomainPolynomial_FFT(len(Li[0]))
-//
-//	setup.Pk.Domain = Domain
-//	Dx := fields.ArithmeticField.EvalPoly(Domain, setup.Toxic.x)
-//	invDelta := fields.ArithmeticField.Inverse(setup.Toxic.Kdelta)
-//	invgamma := fields.ArithmeticField.Inverse(setup.Toxic.Kgamma)
-//	Dx_div_delta := fields.ArithmeticField.Mul(invDelta, Dx)
-//
-//	// encrypt x values with curve generators
-//	// x^i times D(x) divided by delta
-//	var powersXDomaindivDelta = []*bn256.G1{g1ScalarBaseMultiply(Dx_div_delta)}
-//	var powersX_onG = []*bn256.G1{g1ScalarBaseMultiply(big.NewInt(1))}
-//	var powersX_onH = []*bn256.G2{g2ScalarBaseMultiply(big.NewInt(1))}
-//
-//	//G^{x^i}
-//	tEncr := new(big.Int).Set(setup.Toxic.x)
-//	for i := 1; i < gates; i++ {
-//		powersXDomaindivDelta = append(powersXDomaindivDelta, g1ScalarBaseMultiply(fields.ArithmeticField.Mul(tEncr, Dx_div_delta)))
-//		powersX_onG = append(powersX_onG, g1ScalarBaseMultiply(tEncr))
-//		powersX_onH = append(powersX_onH, g2ScalarBaseMultiply(tEncr))
-//		// x^i -> x^{i+1}
-//		tEncr = fields.ArithmeticField.Mul(tEncr, setup.Toxic.x)
-//	}
-//
-//	setup.Pk.G1.PowersX = powersX_onG
-//	setup.Pk.G2.PowersX = powersX_onH
-//	setup.Pk.G1.PowersX_Domain_Delta = powersXDomaindivDelta
-//
-//	setup.Pk.G1.Alpha = g1ScalarBaseMultiply(setup.Toxic.Kalpha)
-//	setup.Pk.G1.Beta = g1ScalarBaseMultiply(setup.Toxic.Kbeta)
-//	setup.Pk.G1.Delta = g1ScalarBaseMultiply(setup.Toxic.Kdelta)
-//
-//	setup.Pk.G2.Beta = g2ScalarBaseMultiply(setup.Toxic.Kbeta)
-//	setup.Pk.G2.Gamma = g2ScalarBaseMultiply(setup.Toxic.Kgamma)
-//	setup.Pk.G2.Delta = g2ScalarBaseMultiply(setup.Toxic.Kdelta)
-//
-//	for i := 0; i < witnessLength; i++ {
-//		// Li(x)
-//		//TODO ERROR! EVAL AT ROOT OF UNITY?
-//		lix := fields.ArithmeticField.EvalPoly(Li[i], setup.Toxic.x)
-//		// Ri(x)
-//		rix := fields.ArithmeticField.EvalPoly(Ri[i], setup.Toxic.x)
-//		// Oi(x)
-//		oix := fields.ArithmeticField.EvalPoly(Oi[i], setup.Toxic.x)
-//
-//		//H^Rix
-//		hRix := g2ScalarBaseMultiply(fields.ArithmeticField.Copy(rix))
-//		setup.Pk.G2.Rx = append(setup.Pk.G2.Rx, hRix)
-//
-//		ter := fields.ArithmeticField.Mul(setup.Toxic.Kalpha, rix)
-//		ter = fields.ArithmeticField.Add(ter, fields.ArithmeticField.Mul(setup.Toxic.Kbeta, lix))
-//
-//		ter = fields.ArithmeticField.Add(ter, oix)
-//
-//		if i < publicinputs {
-//			ter = fields.ArithmeticField.Mul(invgamma, ter)
-//			setup.Pk.G1.RLO_DivGamma = append(setup.Pk.G1.RLO_DivGamma, g1ScalarBaseMultiply(ter))
-//		} else {
-//			ter = fields.ArithmeticField.Mul(invDelta, ter)
-//			setup.Pk.G1.RLO_DivDelta = append(setup.Pk.G1.RLO_DivDelta, g1ScalarBaseMultiply(ter))
-//		}
-//	}
-//	setup.Pk.eGH = bn256.Pair(g1ScalarBaseMultiply(new(big.Int).SetInt64(1)), g2ScalarBaseMultiply(new(big.Int).SetInt64(1)))
-//	//is a field multiplication under order g1 wrong?
-//	setup.Pk.eGHalphaBeta = bn256.Pair(g1ScalarBaseMultiply(setup.Toxic.Kalpha), g2ScalarBaseMultiply(setup.Toxic.Kbeta))
-//	return setup, nil
-//}
+func GenerateTrustedSetup_FFT(publicinputs int, r1cs *Circuitcompiler.R1CSTransposed) (setup *Setup, e error) {
+
+	gates, witnessLength := utils.NextPowerOfTwo(r1cs.NumberOfGates), r1cs.WitnessLength
+	setup = new(Setup)
+	FFT_Paras := utils.Field.PolynomialField.PrepareFFT(gates)
+	setup.fftParas = FFT_Paras
+	fmt.Println("start setup. Performing interpolation...")
+	before := time.Now()
+	Li, Ri, Oi := r1cs.R1CSToEAP_FFT_2(FFT_Paras)
+
+	fmt.Println("lagrange interpolation over the roots of unity done in ", time.Since(before))
+	if len(Li) != len(Ri) || len(Ri) != len(Oi) {
+		panic("amount of polynimials  missmatch")
+	}
+	if publicinputs >= len(Li) {
+		panic("to moany public parameters")
+	}
+
+	var err error
+	fields := utils.Field
+	// generate trapdoor
+	setup.Toxic.x, err = fields.ArithmeticField.Rand()
+	if err != nil {
+		panic("random failed")
+	}
+	setup.Toxic.Kalpha, err = fields.ArithmeticField.Rand()
+	if err != nil {
+		panic("random failed")
+	}
+	setup.Toxic.Kbeta, err = fields.ArithmeticField.Rand()
+	if err != nil {
+		panic("random failed")
+	}
+	setup.Toxic.Kgamma, err = fields.ArithmeticField.Rand()
+	if err != nil {
+		panic("random failed")
+	}
+	setup.Toxic.Kdelta, err = fields.ArithmeticField.Rand()
+	if err != nil {
+		panic("random failed")
+	}
+
+	//the domain poly over the roots of unity is realy simple
+	Domain := FFT_Paras.Domain
+
+	setup.Pk.Domain = FFT_Paras.Domain
+	//TODO other field maybe??
+	Dx := fields.ArithmeticField.EvalPoly(Domain, setup.Toxic.x)
+	invDelta := fields.ArithmeticField.Inverse(setup.Toxic.Kdelta)
+	invgamma := fields.ArithmeticField.Inverse(setup.Toxic.Kgamma)
+	Dx_div_delta := fields.ArithmeticField.Mul(invDelta, Dx)
+
+	// encrypt x values with curve generators
+	// x^i times D(x) divided by delta
+	var powersXDomaindivDelta = []*bn256.G1{g1ScalarBaseMultiply(Dx_div_delta)}
+	var powersX_onG = []*bn256.G1{g1ScalarBaseMultiply(big.NewInt(1))}
+	var powersX_onH = []*bn256.G2{g2ScalarBaseMultiply(big.NewInt(1))}
+
+	//G^{x^i}
+	xi := new(big.Int).Set(setup.Toxic.x)
+	for i := 1; i < gates; i++ {
+
+		if i < gates-1 {
+			powersXDomaindivDelta = append(powersXDomaindivDelta, g1ScalarBaseMultiply(fields.ArithmeticField.Mul(xi, Dx_div_delta)))
+		}
+
+		powersX_onG = append(powersX_onG, g1ScalarBaseMultiply(xi))
+		powersX_onH = append(powersX_onH, g2ScalarBaseMultiply(xi))
+		// x^i -> x^{i+1}
+		xi = fields.ArithmeticField.Mul(xi, setup.Toxic.x)
+	}
+
+	setup.Pk.G1.PowersX = powersX_onG
+	setup.Pk.G2.PowersX = powersX_onH
+	setup.Pk.G1.PowersX_Domain_Delta = powersXDomaindivDelta
+
+	setup.Pk.G1.Alpha = g1ScalarBaseMultiply(setup.Toxic.Kalpha)
+	setup.Pk.G1.Beta = g1ScalarBaseMultiply(setup.Toxic.Kbeta)
+	setup.Pk.G1.Delta = g1ScalarBaseMultiply(setup.Toxic.Kdelta)
+
+	setup.Pk.G2.Beta = g2ScalarBaseMultiply(setup.Toxic.Kbeta)
+	setup.Pk.G2.Gamma = g2ScalarBaseMultiply(setup.Toxic.Kgamma)
+	setup.Pk.G2.Delta = g2ScalarBaseMultiply(setup.Toxic.Kdelta)
+
+	for i := 0; i < witnessLength; i++ {
+		// Li(x)
+		lix := fields.ArithmeticField.EvalPoly(Li[i], setup.Toxic.x)
+		// g^{Li(x)}
+		setup.Pk.G1.Lix = append(setup.Pk.G1.Lix, g1ScalarBaseMultiply(lix))
+
+		// Ri(x)
+		rix := fields.ArithmeticField.EvalPoly(Ri[i], setup.Toxic.x)
+		// h^{Ri(x)}
+		setup.Pk.G2.Rix = append(setup.Pk.G2.Rix, g2ScalarBaseMultiply(rix))
+		// g^{Ri(x)}
+		setup.Pk.G1.Rix = append(setup.Pk.G1.Rix, g1ScalarBaseMultiply(rix))
+
+		// Oi(x)
+		oix := fields.ArithmeticField.EvalPoly(Oi[i], setup.Toxic.x)
+
+		//{alpha * Ri(x) + beta * Li(x) + Oi(x) }
+		ter := fields.ArithmeticField.Mul(setup.Toxic.Kalpha, rix)
+		ter = fields.ArithmeticField.Add(ter, fields.ArithmeticField.Mul(setup.Toxic.Kbeta, lix))
+		ter = fields.ArithmeticField.Add(ter, oix)
+
+		if i < publicinputs {
+			ter = fields.ArithmeticField.Mul(invgamma, ter)
+			//g^ {alpha * Ri(x) + beta * Li(x) + Oi(x) }/ gamma
+			setup.Pk.G1.RLO_DivGamma = append(setup.Pk.G1.RLO_DivGamma, g1ScalarBaseMultiply(ter))
+		} else {
+			ter = fields.ArithmeticField.Mul(invDelta, ter)
+			//g^ {alpha * Ri(x) + beta * Li(x) + Oi(x) }/ delta
+			setup.Pk.G1.RLO_DivDelta = append(setup.Pk.G1.RLO_DivDelta, g1ScalarBaseMultiply(ter))
+		}
+	}
+	//precompute e(g^alpha,h^beta)
+	setup.Pk.eGHalphaBeta = bn256.Pair(setup.Pk.G1.Alpha, setup.Pk.G2.Beta)
+	return setup, nil
+}
 
 // GenerateTrustedSetup generates the Trusted Setup from a compiled function. The Setup.Toxic sub data structure must be destroyed
-func GenerateTrustedSetup(publicinputs int, r1cs *circuitcompiler.R1CSTransposed) (*Setup, error) {
+func GenerateTrustedSetup(publicinputs int, r1cs *Circuitcompiler.R1CSTransposed) (s *Setup, e error) {
 	gates, witnessLength := r1cs.NumberOfGates, r1cs.WitnessLength
 
 	//this bastard is heavy to compute. we interpolate all the polynomials
@@ -428,7 +389,7 @@ func GenerateTrustedSetup(publicinputs int, r1cs *circuitcompiler.R1CSTransposed
 	return setup, nil
 }
 
-func GenerateTrustedSetup_sparse(publicinputs int, r1cs *circuitcompiler.R1CSsPARSETransposed) (*Setup, error) {
+func GenerateTrustedSetup_sparse(publicinputs int, r1cs *Circuitcompiler.R1CSsPARSETransposed) (*Setup, error) {
 	gates, witnessLength := r1cs.NumberOfGates, r1cs.WitnessLength
 
 	//this bastard is heavy to compute. we interpolate all the polynomials

@@ -1,4 +1,4 @@
-package circuitcompiler
+package Circuitcompiler
 
 import (
 	"fmt"
@@ -11,8 +11,6 @@ type gateType uint8
 const (
 	multiplicationGate gateType = iota
 	returnMultiplicationGate
-
-	scalarBaseMultiplyGate
 	equalityGate
 	additionGate
 	sumCheckGate
@@ -21,10 +19,9 @@ const (
 
 type Gate struct {
 	gateType   gateType
-	identifier string
+	Identifier string
 	leftIns    factors //leftIns and RightIns after addition gates have been reduced. only multiplication gates remain
 	rightIns   factors
-	expoIns    factors
 	outIns     factors
 	//extractedConstants *big.Int
 	noNewOutput bool
@@ -33,14 +30,14 @@ type Gate struct {
 }
 
 func (g Gate) String() string {
-	return fmt.Sprintf("Gate: %v  with left %v right %v expo %v out %v", g.identifier, g.leftIns, g.rightIns, g.expoIns, g.outIns)
+	return fmt.Sprintf("Gate: %v  with left %v right  %v out %v", g.Identifier, g.leftIns, g.rightIns, g.outIns)
 }
 
 func (gate *Gate) ID() (id string) {
-	if gate.identifier == "" {
+	if gate.Identifier == "" {
 		return gate.setAndGetID()
 	}
-	return gate.identifier
+	return gate.Identifier
 }
 
 func (gate *Gate) setAndGetID() (id string) {
@@ -51,11 +48,9 @@ func (gate *Gate) setAndGetID() (id string) {
 	r := hashFactorsToBig(gate.rightIns)
 	//we add the hashes of the multiplication part. a cheap way to consider the commutativity in the id creation to avoid duplicates such as a*b and b*a
 	lr := new(big.Int).Add(l, r)
-	sort.Sort(gate.expoIns)
 	sort.Sort(gate.outIns)
-	eo := hashFactorsToBig(append(gate.expoIns, gate.outIns...))
-	gate.identifier = new(big.Int).Xor(lr, eo).String()[:16]
-	return gate.identifier
+	gate.Identifier = lr.String()[:16]
+	return gate.Identifier
 }
 func (gate *Gate) minimizeR1CSDescriptiveComplexity() {
 
@@ -66,8 +61,5 @@ func (gate *Gate) minimizeR1CSDescriptiveComplexity() {
 	//r * 1/c = 1/l  or
 	//1/r*1/l=1/c
 	//is the better represenant regarding bit complexity
-	if gate.expoIns == nil {
-		//rInv, lInv, cInv := invertFactors(gate.leftIns), invertFactors(gate.rightIns), invertFactors(gate.outIns)
 
-	}
 }

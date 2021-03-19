@@ -1,4 +1,4 @@
-package circuitcompiler
+package Circuitcompiler
 
 import (
 	"errors"
@@ -81,59 +81,14 @@ func (er1cs *R1CS) Transpose() (transposed *R1CSTransposed) {
 	return
 }
 
-// R1CSToQAP converts the R1CS* values to the EAP values
-//it uses Lagrange interpolation to to fit a polynomial through each slice. The x coordinate
-//is simply a linear increment starting at 1
-//within this process, the polynomial is evaluated at position 0
-//so an alpha/beta/gamma value is the polynomial evaluated at 0
-// the domain polynomial therefor is (-1+x)(-2+x)...(-n+x)
-func R1CSToEAP_(er1cs *R1CSTransposed, pf *utils.PolynomialField) (lPoly, rPoly, oPoly [][]*big.Int) {
-
-	prep := utils.Field.PolynomialField.PrepareFFT(uint(er1cs.NumberOfGates))
-	//S := prep.RootOfUnitys_SquareSteps
-	fmt.Println(prep.RootOfUnitys)
-
-	zeta := make([]*big.Int, er1cs.NumberOfGates+1)
-	zeta[0] = pf.F.Neg(bigOne)
-	zeta[er1cs.NumberOfGates] = new(big.Int).SetInt64(1)
-
-	lambda, r := pf.Div(zeta, []*big.Int{new(big.Int).SetInt64(int64(er1cs.NumberOfGates))})
-
-	if !utils.IsZeroArray(r) {
-		panic("not true")
-	}
-
-	rho := new(big.Int).SetInt64(1)
-
-	lagrangeBases := make([][]*big.Int, er1cs.NumberOfGates)
-
-	pp := []*big.Int{pf.F.Neg(rho), new(big.Int).SetInt64(int64(er1cs.NumberOfGates))}
-	lagrangeBases[0], r = pf.Div(lambda, pp)
-
-	if !utils.IsZeroArray(r) {
-		panic("not true")
-	}
-
-	lT := er1cs.L
-	rT := er1cs.R
-	oT := er1cs.O
-	for i := 0; i < len(lT); i++ {
-		lPoly = append(lPoly, utils.Field.PolynomialField.LagrangeInterpolation(lT[i]))
-
-		rPoly = append(rPoly, utils.Field.PolynomialField.LagrangeInterpolation(rT[i]))
-
-		oPoly = append(oPoly, utils.Field.PolynomialField.LagrangeInterpolation(oT[i]))
-	}
-	return
-}
-
 //OLD
 func (er1cs *R1CSTransposed) R1CSToEAP() (lPoly, rPoly, oPoly [][]*big.Int) {
 
 	lT := er1cs.L
 	rT := er1cs.R
 	oT := er1cs.O
-	for i := 0; i < len(lT); i++ {
+	utils.Field.PolynomialField.PrecomputeLagrange(er1cs.NumberOfGates)
+	for i := 0; i < er1cs.WitnessLength; i++ {
 		lPoly = append(lPoly, utils.Field.PolynomialField.LagrangeInterpolation(lT[i]))
 
 		rPoly = append(rPoly, utils.Field.PolynomialField.LagrangeInterpolation(rT[i]))
@@ -142,22 +97,72 @@ func (er1cs *R1CSTransposed) R1CSToEAP() (lPoly, rPoly, oPoly [][]*big.Int) {
 	}
 	return
 }
+func (er1cs *R1CSTransposed) R1CSToEAP_FFT_2(fft *utils.FFT_PrecomputedParas) (lPoly, rPoly, oPoly [][]*big.Int) {
+
+	lT := er1cs.L
+	rT := er1cs.R
+	oT := er1cs.O
+	utils.Field.PolynomialField.PrecomputeLagrangeFFT(fft)
+
+	for i := 0; i < er1cs.WitnessLength; i++ {
+		lPoly = append(lPoly, utils.Field.PolynomialField.LagrangeInterpolation_RootOfUnity(fft, fft.ExtendPolyToDomain(lT[i])))
+
+		rPoly = append(rPoly, utils.Field.PolynomialField.LagrangeInterpolation_RootOfUnity(fft, fft.ExtendPolyToDomain(rT[i])))
+
+		oPoly = append(oPoly, utils.Field.PolynomialField.LagrangeInterpolation_RootOfUnity(fft, fft.ExtendPolyToDomain(oT[i])))
+	}
+	return
+}
 
 //note that invDFFT and DFFT increase the size of the input array to the next power of two
-//func (er1cs *R1CSTransposed) R1CSToEAP_FFT() (lPoly, rPoly,  oPoly [][]*big.Int) {
-//
-//	lT := er1cs.L
-//	rT := er1cs.R
-//	oT := er1cs.O
-//	for i := 0; i < len(lT); i++ {
-//		lPoly = append(lPoly, utils.Field.PolynomialField.InvDFFT(lT[i],nil))
-//
-//		rPoly = append(rPoly, utils.Field.PolynomialField.InvDFFT(rT[i],nil))
-//
-//		oPoly = append(oPoly, utils.Field.PolynomialField.InvDFFT(oT[i],nil))
-//	}
-//	return
-//}
+func (er1cs *R1CSTransposed) R1CSToEAP_FFT(fft *utils.FFT_PrecomputedParas) (lPoly, rPoly, oPoly [][]*big.Int) {
+
+	pf := utils.Field.PolynomialField
+
+	lT := er1cs.L
+	rT := er1cs.R
+	oT := er1cs.O
+	gates := fft.Size
+	lagreangeBases := make([][]*big.Int, gates)
+	invGateNumber := pf.F.Inverse(new(big.Int).SetInt64(int64(gates)))
+	lambda := pf.MulScalar(fft.Domain, invGateNumber)
+	rho := fft.RootOfUnitys[gates>>1]
+	var rest []*big.Int
+	lagreangeBases[0], rest = pf.Div(lambda, []*big.Int{rho, bigOne})
+	if !utils.IsZeroArray(rest) {
+		panic("no rest")
+	}
+
+	for i := 1; i < gates; i++ {
+		lambda = pf.MulScalar(lambda, fft.RootOfUnity)
+		index := ((gates >> 1) + i) % gates
+		//inv,_ := pf.Div([]*big.Int{bigOne},[]*big.Int{fft.RootOfUnitys[ index], bigOne})
+		lagreangeBases[i], _ = pf.Div(lambda, []*big.Int{fft.RootOfUnitys[index], bigOne})
+	}
+
+	//test the lagrange polys.
+	//for i := 0; i < gates; i++ {
+	//	for j := 0; j < gates; j++ {
+	//		v := pf.EvalPoly(lagreangeBases[i],fft.RootOfUnitys[j] )
+	//		exp := int64(utils.Equal(i,j))
+	//		if v.Cmp(new(big.Int).SetInt64(exp) ) != 0{
+	//			fmt.Printf("\n error got %v should be %v. at %v,%v",v,exp,i,j)
+	//		}else{
+	//			fmt.Printf("\n correct at %v,%v",i,j)
+	//		}
+	//	}
+	//}
+
+	for i := 0; i < er1cs.WitnessLength; i++ {
+
+		lPoly = append(lPoly, pf.AddPolynomials(pf.LinearCombine(lagreangeBases, lT[i])))
+
+		rPoly = append(rPoly, pf.AddPolynomials(pf.LinearCombine(lagreangeBases, rT[i])))
+
+		oPoly = append(oPoly, pf.AddPolynomials(pf.LinearCombine(lagreangeBases, oT[i])))
+	}
+	return
+}
 
 // R1CSToQAP converts the R1CS* values to the EAP values
 //it uses Lagrange interpolation to to fit a polynomial through each slice. The x coordinate

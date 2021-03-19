@@ -1,4 +1,4 @@
-package circuitcompiler
+package Circuitcompiler
 
 type runeNode struct {
 	r    rune

@@ -147,26 +147,25 @@ func TestPolynomialField_DFFT(t *testing.T) {
 
 	Xpoints := make([]*big.Int, Npoints)
 	for i := int64(0); i < Npoints; i++ {
-		//Xpoints[i], _ = f.Rand()
-		Xpoints[i] = new(big.Int).SetInt64(i)
+		Xpoints[i], _ = f.Rand()
+		//Xpoints[i] = new(big.Int).SetInt64(i)
 	}
 
-	//Xpoints = append(Xpoints, bigZero)
-	offset := &big.Int{}
+	offset := new(big.Int).SetInt64(3)
 	//offset, _ := f.Rand()
-	//res := pf.InvDFFT(offset,Xpoints)
+
 	fmt.Println("x points")
 	//for i := int64(0); i < Npoints; i++ {
 	//	fmt.Println(Xpoints[i])
 	//}
-	para := pf.PrepareFFT(uint(len(Xpoints)))
+	para := pf.PrepareFFT(len(Xpoints))
 	coefficientsAtRootOfUnity := para.InvDFFT(Xpoints, offset)
 	fmt.Println("x points to coefficients")
 	for i := uint(0); i < uint(Npoints); i++ {
 		omega := pf.F.ExpInt(para.RootOfUnity, i)
-		eval := pf.F.EvalPoly(coefficientsAtRootOfUnity, omega)
+		eval := pf.F.EvalPoly(coefficientsAtRootOfUnity, pf.F.Mul(omega, offset))
 		if Xpoints[i].Cmp(eval) != 0 {
-			t.Error(fmt.Sprintf("%v", i))
+			t.Error(fmt.Sprintf("value at root of unity %v", i))
 		}
 	}
 
@@ -184,7 +183,85 @@ func TestPolynomialField_DFFT(t *testing.T) {
 	}
 
 }
+func TestPolynomialField_FFT_Multiplication(t *testing.T) {
+	var Npoints = int64((1 << 3))
 
+	r := new(big.Int).Set(bn256.Order)
+	f := NewFiniteField(r)
+
+	// new Polynomial Field
+	pf := NewPolynomialField(f)
+
+	Xpoints := make([]*big.Int, Npoints)
+	Ypoints := make([]*big.Int, Npoints)
+
+	for i := int64(0); i < Npoints; i++ {
+		Xpoints[i], _ = f.Rand()
+		Ypoints[i], _ = f.Rand()
+		//Xpoints[i] = new(big.Int).SetInt64(i)
+	}
+	Zpoints := pf.PointwiseMultiplication(Xpoints, Ypoints)
+
+	offset := new(big.Int).SetInt64(2)
+	//offset, _ := f.Rand()
+
+	fmt.Println("x points")
+	//for i := int64(0); i < Npoints; i++ {
+	//	fmt.Println(Xpoints[i])
+	//}
+	para := pf.PrepareFFT(len(Xpoints))
+	coeffL := para.InvDFFT(Xpoints, nil)
+	coeffR := para.InvDFFT(Ypoints, nil)
+	coeffO := para.InvDFFT(Zpoints, nil)
+
+	LLRR := pf.Mul(coeffL, coeffR)
+	for i := uint(0); i < uint(Npoints); i++ {
+		if pf.F.EvalPoly(LLRR, para.RootOfUnitys[i]).Cmp(pf.F.EvalPoly(coeffO, para.RootOfUnitys[i])) != 0 {
+			t.Error(fmt.Sprintf("LR(w) != O(w) at w^, i= %v", i))
+		}
+
+	}
+
+	fmt.Printf("\n degree of L %v", pf.degree(coeffL))
+	valuesAtRootsL := para.DFFT(coeffL, offset)
+	valuesAtRootsR := para.DFFT(coeffR, offset)
+	valuesAtRootsO := para.DFFT(coeffO, offset)
+
+	Zs := pf.F.Inverse(pf.F.EvalPoly(para.Domain, offset))
+
+	Hpoints := make([]*big.Int, Npoints)
+	Hpoints = pf.PointwiseSub(pf.PointwiseMultiplication(valuesAtRootsL, valuesAtRootsR), valuesAtRootsO)
+	Hpoints = pf.MulScalar(Hpoints, Zs)
+	//Hpoints = Hpoints[:len(Hpoints)-3]
+	Hcoef := para.InvDFFT(Hpoints, offset)
+
+	fmt.Printf("\n degree of H %v", pf.degree(Hcoef))
+	fmt.Printf("\n degree of Domain %v", pf.degree(para.Domain))
+
+	HD := pf.Mul(Hcoef, para.Domain)
+	fmt.Printf("\n degree of H*D %v", pf.degree(HD))
+	lr := pf.Mul(coeffL, coeffR)
+	fmt.Printf("\n degree of LR %v", pf.degree(lr))
+	R := pf.Sub(lr, coeffO)
+	HH, H := pf.Div(R, para.Domain)
+	if !IsZeroArray(H) {
+		t.Error("no rest allowed")
+	}
+	fmt.Printf("\n degree of LR-O/ D %v", pf.degree(HH))
+	fmt.Printf("\n degree of LR-O %v", pf.degree(R))
+	if !IsZeroArray(pf.Sub(HD, R)) {
+		t.Error("not zero")
+	}
+
+	for i := uint(0); i < uint(Npoints); i++ {
+
+		if pf.F.EvalPoly(HH, para.RootOfUnitys[i]).Cmp(pf.F.EvalPoly(Hcoef, para.RootOfUnitys[i])) != 0 {
+			t.Error(fmt.Sprintf("H*D not zero at root of unity %v", i))
+		}
+
+	}
+
+}
 func TestCombine(t *testing.T) {
 	// new Finite Field
 	var Npoints = int64(100)

@@ -1,8 +1,9 @@
-package circuitcompiler
+package Circuitcompiler
 
 import (
 	"fmt"
 	"math/big"
+	"strconv"
 )
 
 var variableIndicationSign = "@"
@@ -516,4 +517,67 @@ func splitAtNestedEnd(cs []*Constraint) (insideNested, outsideNested []*Constrai
 		}
 	}
 	return
+}
+
+func (currentCircuit *function) getFunctionInputs() (oldInputs []*function) {
+	for _, name := range currentCircuit.Inputs {
+		oldInputs = append(oldInputs, currentCircuit.functions[name])
+	}
+	return
+
+}
+func (currentCircuit *function) setFunctionInputs(inputs []string, fktInputs []*function) {
+	currentCircuit.Inputs = inputs
+	for i, name := range inputs {
+		currentCircuit.functions[name] = fktInputs[i]
+	}
+	return
+
+}
+
+func (currentCircuit *function) getsLoadedWith(newInputs []*function) (allArgumentsLoaded bool) {
+	allArgumentsLoaded = len(currentCircuit.Inputs) == len(newInputs)
+	if len(currentCircuit.Inputs) < len(newInputs) {
+		panic(fmt.Sprintf("%v takes %v arguments, got %v", currentCircuit.Name, len(currentCircuit.Inputs), len(newInputs)))
+	}
+	for i := 0; i < len(newInputs); i++ {
+		currentCircuit.functions[currentCircuit.Inputs[i]] = newInputs[i]
+	}
+	currentCircuit.Inputs = currentCircuit.Inputs[len(newInputs):]
+	return
+}
+
+//helper function
+func (currentCircuit *function) resolveArrayName(c *Constraint) string {
+	var arrayIdentifier = c.Output.Identifier
+	//if len(c.Inputs) < 1 {
+	//	panic("accessing array index failed")
+	//}
+	for _, in := range c.Inputs {
+		indexFactors, _, _ := currentCircuit.compile(in, newGateContainer())
+		if !indexFactors.isSingleNumber() {
+			panic("cannot access array dynamically in an arithmetic circuit currently")
+		}
+		if len(indexFactors) > 1 {
+			panic("unexpected")
+		}
+		tmp, err := strconv.ParseInt(indexFactors[0].Typ.Identifier, 10, 64)
+		if err != nil || tmp < 0 {
+			panic(err.Error())
+		}
+		arrayIdentifier += fmt.Sprintf("[%v]", tmp)
+	}
+	return arrayIdentifier
+}
+
+func (currentCircuit *function) execute(gateCollector *gateContainer) (facs factors, returned bool, preloadedFunction function) {
+
+	for _, task := range currentCircuit.taskStack.data {
+		f, returs, fkt := currentCircuit.compile(task, gateCollector)
+		if returs {
+			return f, true, fkt
+		}
+		//gateCollector.completeFunction(f)
+	}
+	return nil, false, function{}
 }

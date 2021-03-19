@@ -2,7 +2,7 @@ package zkSNARK
 
 import (
 	"fmt"
-	"github.com/mottla/go-R1CS-Compiler/circuitcompiler"
+	"github.com/mottla/go-R1CS-Compiler/Circuitcompiler"
 	"github.com/mottla/go-R1CS-Compiler/testPrograms"
 	"github.com/mottla/go-R1CS-Compiler/utils"
 	"github.com/stretchr/testify/assert"
@@ -18,30 +18,30 @@ func TestGenerateAndVerifyProof_OldArray(t *testing.T) {
 			continue
 		}
 
-		program := circuitcompiler.Parse(test.Code, true)
+		program := Circuitcompiler.Parse(test.Code, true)
 
 		fmt.Println("Code>>")
 		fmt.Println(test.Code)
 
 		before := time.Now()
 		fmt.Println("Generating CRS...")
-		gates := program.Execute()
-
+		container := program.Execute()
+		gates := container.OrderedGates()
 		fmt.Println("\n generating R1CS")
 		r1cs := program.GatesToR1CS(gates)
 
 		trasposedR1Cs := r1cs.Transpose()
-		fmt.Println(r1cs.L)
-		fmt.Println(r1cs.R)
-		fmt.Println(r1cs.O)
+		//fmt.Println(r1cs.L)
+		//fmt.Println(r1cs.R)
+		//fmt.Println(r1cs.O)
 
 		setup, err := GenerateTrustedSetup(program.GlobalInputCount(), trasposedR1Cs)
 		fmt.Println("CRS generation time elapsed:", time.Since(before))
 		assert.NoError(t, err)
 
 		for _, io := range test.IO {
-			inputs := circuitcompiler.CombineInputs(program.GetMainCircuit().Inputs, io.Inputs)
-			trace, err := circuitcompiler.CalculateTrace(r1cs, inputs)
+			inputs := Circuitcompiler.CombineInputs(program.GetMainCircuit().Inputs, io.Inputs)
+			trace, err := Circuitcompiler.CalculateTrace(r1cs, inputs)
 
 			assert.NoError(t, err)
 			fmt.Println("input")
@@ -84,14 +84,15 @@ func TestGenerateAndVerifyProof_Sparse(t *testing.T) {
 			continue
 		}
 
-		program := circuitcompiler.Parse(test.Code, true)
+		program := Circuitcompiler.Parse(test.Code, true)
 
 		fmt.Println("Code>>")
 		fmt.Println(test.Code)
 
 		before := time.Now()
 		fmt.Println("Generating CRS...")
-		gates := program.Execute()
+		container := program.Execute()
+		gates := container.OrderedGates()
 
 		fmt.Println("\n generating R1CS")
 		r1cs := program.GatesToSparseR1CS(gates)
@@ -106,8 +107,8 @@ func TestGenerateAndVerifyProof_Sparse(t *testing.T) {
 		assert.NoError(t, err)
 
 		for _, io := range test.IO {
-			inputs := circuitcompiler.CombineInputs(program.GetMainCircuit().Inputs, io.Inputs)
-			trace, err := circuitcompiler.CalculateTrace_sparse(r1cs, inputs)
+			inputs := Circuitcompiler.CombineInputs(program.GetMainCircuit().Inputs, io.Inputs)
+			trace, err := Circuitcompiler.CalculateTrace_sparse(r1cs, inputs)
 
 			assert.NoError(t, err)
 			fmt.Println("input")
@@ -150,30 +151,31 @@ func TestGenerateAndVerifyProof_FFT(t *testing.T) {
 			continue
 		}
 
-		program := circuitcompiler.Parse(test.Code, true)
+		program := Circuitcompiler.Parse(test.Code, true)
 
 		fmt.Println("Code>>")
 		fmt.Println(test.Code)
 
 		before := time.Now()
 		fmt.Println("Generating CRS...")
-		gates := program.Execute()
+		container := program.Execute()
+		gates := container.OrderedGates()
 
 		fmt.Println("\n generating R1CS")
 		r1cs := program.GatesToR1CS(gates)
 
 		trasposedR1Cs := r1cs.Transpose()
-		fmt.Println(r1cs.L)
-		fmt.Println(r1cs.R)
-		fmt.Println(r1cs.O)
+		//fmt.Println(r1cs.L)
+		//fmt.Println(r1cs.R)
+		//fmt.Println(r1cs.O)
 
-		setup, err := GenerateTrustedSetup(program.GlobalInputCount(), trasposedR1Cs)
+		setup, err := GenerateTrustedSetup_FFT(program.GlobalInputCount(), trasposedR1Cs)
 		fmt.Println("CRS generation time elapsed:", time.Since(before))
 		assert.NoError(t, err)
 
 		for _, io := range test.IO {
-			inputs := circuitcompiler.CombineInputs(program.GetMainCircuit().Inputs, io.Inputs)
-			trace, err := circuitcompiler.CalculateTrace(r1cs, inputs)
+			inputs := Circuitcompiler.CombineInputs(program.GetMainCircuit().Inputs, io.Inputs)
+			trace, err := Circuitcompiler.CalculateTrace(r1cs, inputs)
 
 			assert.NoError(t, err)
 			fmt.Println("input")
@@ -181,22 +183,20 @@ func TestGenerateAndVerifyProof_FFT(t *testing.T) {
 			fmt.Println("trace")
 			fmt.Println(trace)
 
-			px := CombinePolynomials2(trace, trasposedR1Cs)
-
-			hx, rx := utils.Field.PolynomialField.Div(px, setup.Pk.Domain)
-
-			if !utils.IsZeroArray(rx) {
-				t.Error("Px/Dx has a rest")
-			}
-
+			hx := CombinePolynomials_Efficient(setup.fftParas, trace, trasposedR1Cs)
+			pf := utils.Field.PolynomialField
+			f := utils.Field.ArithmeticField
 			var bigZero = big.NewInt(int64(0))
+			v := new(big.Int).SetInt64(1)
 
-			//Test if P(x) is indeed 0 at each gate index
-			for i := 0; i < len(gates); i++ {
-				if bigZero.Cmp(utils.Field.ArithmeticField.EvalPoly(px, new(big.Int).SetInt64(int64(i)))) != 0 {
+			for i := uint(0); i < uint(r1cs.NumberOfGates); i++ {
+				L := pf.EvalPoly(pf.Mul(hx, setup.fftParas.Domain), v)
+				v = f.Mul(v, setup.fftParas.RootOfUnity)
+				if L.Cmp(bigZero) != 0 {
 					t.Error("Px must be zero ate each gate")
 				}
 			}
+
 			before := time.Now()
 			proof, err := GenerateProofs(program.GlobalInputCount(), &setup.Pk, trace, hx)
 			fmt.Println("proof generation time elapsed:", time.Since(before))
@@ -216,7 +216,7 @@ func TestGenerateAndVerifyProof_FFT(t *testing.T) {
 //			continue
 //		}
 //
-//		program := circuitcompiler.Parse(test.Code, true)
+//		program := Circuitcompiler.Parse(test.Code, true)
 //
 //		fmt.Println("Code>>")
 //		fmt.Println(test.Code)
@@ -245,11 +245,11 @@ func TestGenerateAndVerifyProof_FFT(t *testing.T) {
 //		assert.NoError(t, err)
 //
 //		for _, io := range test.IO {
-//			inputs := circuitcompiler.CombineInputs(program.PublicInputs, io.Inputs)
-//			w, err := circuitcompiler.CalculateTrace_sparse(r1cs, inputs)
+//			inputs := Circuitcompiler.CombineInputs(program.PublicInputs, io.Inputs)
+//			w, err := Circuitcompiler.CalculateTrace_sparse(r1cs, inputs)
 //
 //			assert.NoError(t, err)
-//			//wsparse, werr := circuitcompiler.CalculateTrace_sparse(r1csSparse, inputs)
+//			//wsparse, werr := Circuitcompiler.CalculateTrace_sparse(r1csSparse, inputs)
 //			//assert.NoError(t, werr)
 //
 //			fmt.Println("input")
@@ -296,7 +296,7 @@ func TestGenerateAndVerifyProof_FFT(t *testing.T) {
 //			continue
 //		}
 //
-//		program := circuitcompiler.Parse(test.Code, true)
+//		program := Circuitcompiler.Parse(test.Code, true)
 //
 //		fmt.Println("Code>>")
 //		fmt.Println(test.Code)
@@ -325,10 +325,10 @@ func TestGenerateAndVerifyProof_FFT(t *testing.T) {
 //		assert.NoError(t, erro)
 //
 //		for _, io := range test.IO {
-//			inputs := circuitcompiler.CombineInputs(program.PublicInputs, io.Inputs)
-//			w, err := circuitcompiler.CalculateTrace(r1cs, inputs)
+//			inputs := Circuitcompiler.CombineInputs(program.PublicInputs, io.Inputs)
+//			w, err := Circuitcompiler.CalculateTrace(r1cs, inputs)
 //			assert.NoError(t, err)
-//			wsparse, werr := circuitcompiler.CalculateTrace_sparse(r1csSparse, inputs)
+//			wsparse, werr := Circuitcompiler.CalculateTrace_sparse(r1csSparse, inputs)
 //			assert.NoError(t, werr)
 //
 //			fmt.Println("input")

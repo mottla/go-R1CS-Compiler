@@ -41,6 +41,13 @@ func TestBnPool_Count(t *testing.T) {
 	//}
 
 }
+func TestOneGT(t *testing.T) {
+	a1 := new(G1).ScalarBaseMult(bigFromBase10("1"))
+	fmt.Println(a1)
+	a2 := new(G2).ScalarBaseMult(bigFromBase10("1"))
+	fmt.Println(a2.CurvePoints())
+
+}
 func TestPairings(t *testing.T) {
 	a1 := new(G1).ScalarBaseMult(bigFromBase10("1"))
 	a2 := new(G1).ScalarBaseMult(bigFromBase10("2"))

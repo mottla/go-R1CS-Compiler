@@ -1,4 +1,4 @@
-package circuitcompiler
+package Circuitcompiler
 
 import (
 	"crypto/md5"
@@ -605,7 +605,7 @@ func isArrayAssignment(stx []Token) (yn bool, err string) {
 		return false, "array assignment needs min 3 tokens: a = b"
 	}
 	if stx[0].Type != IDENTIFIER_VARIABLE {
-		return false, "identifier expected"
+		return false, "Identifier expected"
 	}
 
 	if stx[1].Identifier != "[" || stx[2].Identifier != "]" {
@@ -626,7 +626,7 @@ func isVariableAssignment(stx []Token) (yn bool, rem []Token, err string) {
 		return false, nil, "assignment needs min 3 tokens: a = b"
 	}
 	if stx[0].Type != IDENTIFIER_VARIABLE {
-		return false, nil, "identifier expected"
+		return false, nil, "Identifier expected"
 	}
 	if stx[1].Type != AssignmentOperatorToken {
 		return false, nil, "assignment  expected"

@@ -1,4 +1,4 @@
-package circuitcompiler
+package Circuitcompiler
 
 import (
 	"fmt"
@@ -41,8 +41,8 @@ func TestCorrectness(t *testing.T) {
 		fmt.Println(test.Code)
 		program := Parse(test.Code, true)
 
-		gates := program.Execute()
-
+		container := program.Execute()
+		gates := container.OrderedGates()
 		fmt.Println("\n generating R1CS")
 		r1cs := program.GatesToR1CS(gates)
 		fmt.Printf("number of gates %v, witness length %v \n ", r1cs.NumberOfGates, r1cs.WitnessLength)

@@ -1,4 +1,4 @@
-package circuitcompiler
+package Circuitcompiler
 
 import (
 	"crypto/sha256"
@@ -17,7 +17,7 @@ var bigOne = big.NewInt(1)
 type factors []factor
 
 type factor struct {
-	typ            Token
+	Typ            Token
 	multiplicative *big.Int
 }
 
@@ -38,7 +38,7 @@ func (f factors) Less(i, j int) bool {
 
 func (f factor) String() string {
 
-	str := f.typ.Identifier
+	str := f.Typ.Identifier
 
 	return fmt.Sprintf("(\"%s\"  fac: %v)", str, f.multiplicative)
 }
@@ -46,12 +46,12 @@ func (f factor) String() string {
 func (f factors) clone() (res factors) {
 	res = make(factors, len(f))
 	for k, v := range f {
-		res[k] = factor{multiplicative: new(big.Int).Set(v.multiplicative), typ: v.typ}
+		res[k] = factor{multiplicative: new(big.Int).Set(v.multiplicative), Typ: v.Typ}
 	}
 	return
 }
 func (f factors) isSingleNumber() bool {
-	return len(f) == 1 && f[0].typ.Type == NumberToken
+	return len(f) == 1 && f[0].Typ.Type == NumberToken
 
 }
 
@@ -125,38 +125,38 @@ func mulFactors(leftFactors, rightFactors factors) (result factors) {
 
 		for _, right := range rightFactors {
 
-			if left.typ.Type == NumberToken && right.typ.Type&IN != 0 {
-				leftFactors[i] = factor{typ: right.typ, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
-				//leftFactors[i] = &factor{typ: right.typ, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
+			if left.Typ.Type == NumberToken && right.Typ.Type&IN != 0 {
+				leftFactors[i] = factor{Typ: right.Typ, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
+				//leftFactors[i] = &factor{Typ: right.Typ, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
 				continue
 			}
 
-			if left.typ.Type&IN != 0 && right.typ.Type == NumberToken {
-				leftFactors[i] = factor{typ: left.typ, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
-				//leftFactors[i] = &factor{typ: left.typ, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
+			if left.Typ.Type&IN != 0 && right.Typ.Type == NumberToken {
+				leftFactors[i] = factor{Typ: left.Typ, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
+				//leftFactors[i] = &factor{Typ: left.Typ, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
 				continue
 			}
 
-			if right.typ.Type&left.typ.Type == NumberToken {
+			if right.Typ.Type&left.Typ.Type == NumberToken {
 				res := field.Mul(right.multiplicative, left.multiplicative)
-				leftFactors[i] = factor{typ: Token{Type: NumberToken, Identifier: res.String()}, multiplicative: res}
+				leftFactors[i] = factor{Typ: Token{Type: NumberToken, Identifier: res.String()}, multiplicative: res}
 				//res := field.Mul(right.multiplicative, left.multiplicative)
-				//leftFactors[i] = &factor{typ: Token{Type: NumberToken, Identifier: res.String()}, multiplicative: res}
+				//leftFactors[i] = &factor{Typ: Token{Type: NumberToken, Identifier: res.String()}, multiplicative: res}
 				continue
 
 			}
 			//tricky part here
 			//this one should only be reached, after a true multiplicationGate had its left and right braches computed. here we
 			//a factor can appear at most in quadratic form. we reduce terms a*a^-1 here.
-			//if right.typ.Type&left.typ.Type&IN != 0 {
-			//	if left.typ.Identifier == right.typ.Identifier {
+			//if right.Typ.Type&left.Typ.Type&IN != 0 {
+			//	if left.Typ.Identifier == right.Typ.Identifier {
 			//		if right.invert != left.invert {
-			//			leftFactors[i] = &factor{typ: Token{Type: NumberToken}, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
+			//			leftFactors[i] = &factor{Typ: Token{Type: NumberToken}, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
 			//			continue
 			//		}
 			//	}
 			//
-			//	//rightFactors[i] = factor{typ: CONST, negate: Xor(facRight.negate, facLeft.negate), multiplicative: mul2DVector(facRight.multiplicative, facLeft.multiplicative)}
+			//	//rightFactors[i] = factor{Typ: CONST, negate: Xor(facRight.negate, facLeft.negate), multiplicative: mul2DVector(facRight.multiplicative, facLeft.multiplicative)}
 			//	//continue
 			//
 			//}
@@ -175,18 +175,18 @@ func abs(n int) (val int, positive bool) {
 
 //adds two factors to one iff they are both are constants or of the same variable
 func addFactor(facLeft, facRight factor) (couldAdd bool, sum factor) {
-	if facLeft.typ.Type&facRight.typ.Type == NumberToken {
+	if facLeft.Typ.Type&facRight.Typ.Type == NumberToken {
 		//res := field.Add(facLeft.multiplicative, facRight.multiplicative)
 		res := field.Add(facLeft.multiplicative, facRight.multiplicative)
-		return true, factor{typ: Token{
+		return true, factor{Typ: Token{
 			Type:       NumberToken,
 			Identifier: res.String(),
 		}, multiplicative: res}
 
 	}
 
-	if facLeft.typ.Type == facRight.typ.Type && facLeft.typ.Identifier == facRight.typ.Identifier {
-		return true, factor{typ: facRight.typ, multiplicative: field.Add(facLeft.multiplicative, facRight.multiplicative)}
+	if facLeft.Typ.Type == facRight.Typ.Type && facLeft.Typ.Identifier == facRight.Typ.Identifier {
+		return true, factor{Typ: facRight.Typ, multiplicative: field.Add(facLeft.multiplicative, facRight.multiplicative)}
 
 	}
 	//panic("unexpected")
@@ -227,7 +227,7 @@ func addFactors(leftFactors, rightFactors factors) factors {
 
 	if len(res) == 0 {
 		res = []factor{factor{
-			typ: Token{
+			Typ: Token{
 				Type:       NumberToken,
 				Identifier: "0",
 			},
@@ -240,8 +240,8 @@ func negateFactors(leftFactors factors) factors {
 	for i := range leftFactors {
 		//leftFactors[i].multiplicative = field.Neg(leftFactors[i].multiplicative)
 		leftFactors[i].multiplicative = leftFactors[i].multiplicative.Neg(leftFactors[i].multiplicative)
-		if leftFactors[i].typ.Type == NumberToken {
-			leftFactors[i].typ.Identifier = leftFactors[i].multiplicative.String()
+		if leftFactors[i].Typ.Type == NumberToken {
+			leftFactors[i].Typ.Identifier = leftFactors[i].multiplicative.String()
 		}
 	}
 	return leftFactors
@@ -257,8 +257,8 @@ func invertFactors(leftFactors factors) factors {
 	leftFactors = leftFactors.clone()
 	for i := range leftFactors {
 		leftFactors[i].multiplicative = field.Inverse(leftFactors[i].multiplicative)
-		if leftFactors[i].typ.Type == NumberToken {
-			leftFactors[i].typ.Identifier = leftFactors[i].multiplicative.String()
+		if leftFactors[i].Typ.Type == NumberToken {
+			leftFactors[i].Typ.Identifier = leftFactors[i].multiplicative.String()
 		}
 	}
 	return leftFactors
@@ -276,20 +276,20 @@ func (from factors) primitiveReturnfunction() (gives *function) {
 
 func (from factor) primitiveReturnfunction() (gives *function) {
 
-	if from.typ.Type == NumberToken {
-		c := from.typ.primitiveReturnfunction()
+	if from.Typ.Type == NumberToken {
+		c := from.Typ.primitiveReturnfunction()
 		c.isNumber = true
 		c.value = from.multiplicative
 		return c
 	}
 	if from.multiplicative.Cmp(bigOne) == 0 {
-		return from.typ.primitiveReturnfunction()
+		return from.Typ.primitiveReturnfunction()
 	}
-	rmp := newCircuit(from.typ.Identifier, nil)
+	rmp := newCircuit(from.Typ.Identifier, nil)
 	rmp.taskStack.add(&Constraint{
 		Output: Token{
 			Type: RETURN,
-			//Identifier: fmt.Sprintf("%v*%v",from.multiplicative.String(),from.typ.Identifier),
+			//Identifier: fmt.Sprintf("%v*%v",from.multiplicative.String(),from.Typ.Identifier),
 			Identifier: "",
 		},
 		Inputs: []*Constraint{
@@ -304,7 +304,7 @@ func (from factor) primitiveReturnfunction() (gives *function) {
 					Identifier: from.multiplicative.String(),
 				},
 			}, &Constraint{
-				Output: from.typ,
+				Output: from.Typ,
 			},
 		},
 	})
@@ -317,7 +317,7 @@ func combineFunctions(operation string, a, b *function) *function {
 		switch operation {
 		case "*":
 			f := factor{
-				typ: Token{
+				Typ: Token{
 					Type:       NumberToken,
 					Identifier: field.Mul(a.value, b.value).String(),
 				},
@@ -326,7 +326,7 @@ func combineFunctions(operation string, a, b *function) *function {
 			return f.primitiveReturnfunction()
 		case "/":
 			f := factor{
-				typ: Token{
+				Typ: Token{
 					Type:       NumberToken,
 					Identifier: field.Div(a.value, b.value).String(),
 				},
@@ -335,7 +335,7 @@ func combineFunctions(operation string, a, b *function) *function {
 			return f.primitiveReturnfunction()
 		case "-":
 			f := factor{
-				typ: Token{
+				Typ: Token{
 					Type:       NumberToken,
 					Identifier: field.Sub(a.value, b.value).String(),
 				},
@@ -344,7 +344,7 @@ func combineFunctions(operation string, a, b *function) *function {
 			return f.primitiveReturnfunction()
 		case "+":
 			f := factor{
-				typ: Token{
+				Typ: Token{
 					Type:       NumberToken,
 					Identifier: field.Add(a.value, b.value).String(),
 				},

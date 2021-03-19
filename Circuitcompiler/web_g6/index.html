@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <title>VivaGraphs webgl dynamic graph test page</title>
+    <script src="g6.min.js"></script>
+    <script type='text/javascript'></script>
+    <script src="index.js"></script>
+    <style type='text/css'>
+        html {
+            overflow: hidden;
+        }
+
+        body {
+            overflow: hidden;
+            padding: 0;
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            background: gray;
+        }
+
+        .node {
+            background-color: #00a2e8;
+            width: 10px;
+            height: 10px;
+            position: absolute;
+        }
+
+        .link {
+            background-color: #dddddd;
+            position: absolute;
+        }
+
+        .leftcolumn {
+            float: left;
+            width: 20%;
+            padding: 5px;
+        }
+
+        .rightcolumn {
+            float: left;
+            width: 76%;
+            padding: 5px;
+        }
+
+        .row:after {
+            content: "";
+            display: table;
+            clear: both;
+        }
+
+        .card {
+            background-color: antiquewhite;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        #graph1 {
+            background-color: azure;
+            width: 100%;
+
+        }
+        .graph-overlay {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+        }
+        .graph-selection-indicator {
+            position: absolute;
+            background: transparent;
+            border: 1px solid orange;
+        }
+
+        #log {
+            background: white;
+            margin: 0;
+            padding: 0.5em 0.5em 0.5em 0.5em;
+
+            top: 0.5em;
+            left: 0.5em;
+            right: 0.5em;
+            bottom: 3em;
+            overflow: auto;
+        }
+
+        #form {
+            padding: 0 0.5em 0 0.5em;
+            margin: 0;
+            bottom: 1em;
+            left: 0px;
+            width: 100%;
+            overflow: hidden;
+        }
+    </style>
+</head>
+
+<body onload="onLoad()" style="background-color: black;">
+
+<div class="row">
+
+    <div class="leftcolumn">
+        <div class="card">
+            <div id="log" style="height: 500px"></div>
+            <form id="form">
+                <input type="submit" value="Send"/>
+                <input type="text" id="msg" size="64"/>
+            </form>
+
+        </div>
+
+
+    </div>
+    <div class="rightcolumn">
+        <div class="card">
+            <div id='graph1' style="height: 800px">
+
+
+            </div>
+
+        </div>
+    </div>
+
+</div>
+</body>
+</html>
+
+

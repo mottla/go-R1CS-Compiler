@@ -2,55 +2,7 @@ package utils
 
 import (
 	"math/big"
-	"math/bits"
 )
-
-var bigZero = big.NewInt(int64(0))
-var bigOne = big.NewInt(int64(1))
-
-// Transpose transposes the *big.Int matrix
-func Transpose(matrix [][]*big.Int) [][]*big.Int {
-	r := make([][]*big.Int, len(matrix[0]))
-	for x, _ := range r {
-		r[x] = make([]*big.Int, len(matrix))
-	}
-	for y, s := range matrix {
-		for x, e := range s {
-			r[x][y] = e
-		}
-	}
-	return r
-}
-
-// ArrayOfBigZeros creates a *big.Int array with n elements to zero
-func ArrayOfBigZeros(num int) []*big.Int {
-
-	var r = make([]*big.Int, num, num)
-	for i := 0; i < num; i++ {
-		r[i] = bigZero
-	}
-	return r
-}
-func BigArraysEqual(a, b []*big.Int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := 0; i < len(a); i++ {
-		if a[i].Cmp(b[i]) != 0 {
-			return false
-		}
-	}
-	return true
-}
-
-func IsZeroArray(a []*big.Int) bool {
-	for i := 0; i < len(a); i++ {
-		if a[i].Cmp(bigZero) != 0 {
-			return false
-		}
-	}
-	return true
-}
 
 // PolynomialField is the Polynomial over a Finite Field where the polynomial operations are performed
 type PolynomialField struct {
@@ -108,13 +60,6 @@ func (pf PolynomialField) Div(a, b []*big.Int) ([]*big.Int, []*big.Int) {
 		rem = aux2[:len(aux2)-1]
 	}
 	return r, rem
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // Add adds two polinomials over the Finite Field
@@ -201,172 +146,32 @@ func (pf PolynomialField) DomainPolynomial(len int) []*big.Int {
 	return Domain
 }
 
-//returns (x-omega^0)(x-omega^1)..(x-omega^(len-1))
-func (pf PolynomialField) DomainPolynomial_OverUnityRoos(roots []*big.Int) []*big.Int {
-	Domain := []*big.Int{pf.F.Neg(roots[0]), big.NewInt(int64(1))}
-
-	for i := 1; i < len(roots); i++ {
-		Domain = pf.Mul(
-			Domain,
-			[]*big.Int{
-				pf.F.Neg(roots[i]), big.NewInt(int64(1)),
-			})
+func (pf PolynomialField) degree(p []*big.Int) int {
+	for i := len(p) - 1; i > 0; i-- {
+		if p[i].Cmp(bigZero) != 0 {
+			return i
+		}
 	}
-	return Domain
-}
+	return 0
 
-//todo be clone or overwrite?
+}
 func (pf PolynomialField) shift(shift *big.Int, invert bool, inputValues []*big.Int) (shiftedValues []*big.Int) {
-	if shift == nil {
+	if shift == nil || shift.Cmp(bigZero) == 0 {
 		return inputValues
 	}
+	shiftedValues = make([]*big.Int, len(inputValues))
+
 	in := new(big.Int).Set(shift)
 	if invert {
 		in = pf.F.Inverse(in)
 	}
-	res := new(big.Int).Set(in)
+	res := new(big.Int).SetInt64(1)
 	for k, v := range inputValues {
-		inputValues[k] = pf.F.Mul(res, v)
+		shiftedValues[k] = pf.F.Mul(res, v)
 		res = pf.F.Mul(res, in)
 	}
 
-	return inputValues
-}
-
-type FFT_PrecomputedParas struct {
-	RootOfUnity                  *big.Int
-	RootOfUnitys_SquareSteps     []*big.Int // w,w^2,w^4,w^8..
-	RootOfUnity_inv              *big.Int
-	RootOfUnity_invs_SquareSteps []*big.Int // w^-1,w^-2,w^-4,w^-8..
-	RootOfUnitys                 []*big.Int // 1,w,w^2,w^3,w^4..,
-	RootOfUnity_invs             []*big.Int // 1,w^-1,w^-2,w^-3,w^-4..
-	Size                         int
-	pf                           *PolynomialField
-}
-
-func (pf *PolynomialField) PrepareFFT(length uint) *FFT_PrecomputedParas {
-	paras := new(FFT_PrecomputedParas)
-	paras.pf = pf
-	adicity, _ := pf.F.Adicity()
-	rootOfUnity, _ := new(big.Int).SetString("19103219067921713944291392827692070036145651957329286315305642004821462161904", 10)
-	//now find the closest possible power of two, to fill up the datapoints
-	bit := bits.Len(nextPowerOfTwo(length))
-	// 1000 = 1 << 3, so we remove 1 from bit
-	bit = bit - 1
-	if adicity < bit {
-		panic("field has two low adicity to support fft for that many values")
-	}
-	paras.Size = bit
-	//now determine the root of unity
-	// exponent = c*2^(adicity-(bit+1))
-	// now for any k in Field, (k^(exponent))^2^(bit+1)==1 mod P
-	//fmt.Println(c.String())
-	exponent := new(big.Int).Lsh(new(big.Int).SetInt64(1), uint(adicity-bit-1))
-
-	alphaSqrt := pf.F.Exp(rootOfUnity, exponent)
-	//fmt.Println(alphaSqrt.String())
-	alpha := pf.F.Mul(alphaSqrt, alphaSqrt)
-	alphaInv := pf.F.Inverse(alpha)
-	if pf.F.Exp(alpha, new(big.Int).Lsh(new(big.Int).SetInt64(1), uint(bit))).Cmp(bigOne) != 0 {
-		panic("(k^(exponent))^2^(bit+1) != 1 mod P ")
-	}
-
-	bigAlphas_SS := make([]*big.Int, bit)
-	bigAlphas_Inv_SS := make([]*big.Int, bit)
-	bigAlphas_Inv := make([]*big.Int, 1<<(bit-1))
-	bigAlphas := make([]*big.Int, 1<<(bit-1))
-
-	bigAlphas_SS[0] = alpha
-	bigAlphas_Inv_SS[0] = alphaInv
-	for i := 1; i < bit; i++ {
-		bigAlphas_SS[i] = pf.F.Mul(bigAlphas_SS[i-1], bigAlphas_SS[i-1])
-		bigAlphas_Inv_SS[i] = pf.F.Mul(bigAlphas_Inv_SS[i-1], bigAlphas_Inv_SS[i-1])
-	}
-
-	bigAlphas[0] = new(big.Int).SetInt64(1)
-	bigAlphas_Inv[0] = new(big.Int).SetInt64(1)
-	for i := 1; i < len(bigAlphas); i++ {
-		bigAlphas[i] = pf.F.Mul(bigAlphas[i-1], alpha)
-		bigAlphas_Inv[i] = pf.F.Mul(bigAlphas_Inv[i-1], alphaInv)
-	}
-
-	paras.RootOfUnity = alpha
-	paras.RootOfUnity_inv = alphaInv
-	paras.RootOfUnity_invs_SquareSteps = bigAlphas_Inv_SS
-	paras.RootOfUnitys_SquareSteps = bigAlphas_SS
-	paras.RootOfUnitys = bigAlphas
-	paras.RootOfUnity_invs = bigAlphas_Inv
-
-	if pf.F.Exp(bigAlphas_SS[len(bigAlphas_SS)-1], new(big.Int).SetInt64(2)).Cmp(bigOne) != 0 {
-		panic("cannot happen")
-	}
-
-	return paras
-}
-
-func (p *FFT_PrecomputedParas) InvDFFT(ValuesAtRoots []*big.Int, shift *big.Int) (coefficients []*big.Int) {
-	c1 := make(chan []*big.Int)
-	go p._dfft(p.RootOfUnity_invs_SquareSteps, p.RootOfUnity_invs, p.extendPolyToDomain(ValuesAtRoots), c1)
-	coefficients = <-c1
-	div := new(big.Int).SetInt64(int64(len(coefficients)))
-	for i, v := range coefficients {
-		coefficients[i] = p.pf.F.Div(v, div)
-	}
-	//return p.pf.shift(shift, true, coefficients)
-	return coefficients
-}
-
-func (p *FFT_PrecomputedParas) DFFT(polynomial []*big.Int, shift *big.Int) (evaluatedAtRoots []*big.Int) {
-	c1 := make(chan []*big.Int)
-	go p._dfft(p.RootOfUnitys_SquareSteps, p.RootOfUnitys, p.extendPolyToDomain(polynomial), c1)
-	return <-c1
-	//return p.pf.shift(shift, false, valuesAtRoots)
-}
-
-func (p *FFT_PrecomputedParas) extendPolyToDomain(in []*big.Int) []*big.Int {
-	if len(in) < 1<<p.Size {
-		rest := (1 << p.Size) - len(in)
-		//fmt.Printf("\npolysize %v, filled up to next power of two 2^%v. Add %v dummy values", len(polynomial), bit, rest)
-		in = append(in, ArrayOfBigZeros(rest)...)
-	}
-	return in
-}
-
-func (p *FFT_PrecomputedParas) _dfft(bigAlphas_SS, bigAlphas, data []*big.Int, in chan []*big.Int) {
-	if len(data) == 1 {
-		in <- data
-		return
-	}
-	even := []*big.Int{}
-	odd := []*big.Int{}
-	for k, _ := range data {
-		if k%2 == 1 {
-			odd = append(odd, data[k])
-		} else {
-			even = append(even, data[k])
-		}
-	}
-
-	removeUneven := make([]*big.Int, 0, len(bigAlphas)/2)
-	for k, v := range bigAlphas {
-		if k%2 == 0 {
-			removeUneven = append(removeUneven, v)
-		}
-	}
-	c1, c2 := make(chan []*big.Int, 1), make(chan []*big.Int, 1)
-
-	go p._dfft(bigAlphas_SS[1:], removeUneven, even, c1)
-	go p._dfft(bigAlphas_SS[1:], removeUneven, odd, c2)
-	y, y2 := <-c1, <-c2
-
-	res := make([]*big.Int, len(data))
-	for k := 0; k < len(data)/2; k++ {
-		wy := p.pf.F.Mul(bigAlphas[k], y2[k])
-		res[k] = p.pf.F.Add(y[k], wy)
-		res[k+(len(data)/2)] = p.pf.F.Sub(y[k], wy)
-	}
-	in <- res
-	return
+	return shiftedValues
 }
 
 // LagrangeInterpolation performs the Lagrange Interpolation / Lagrange Polynomials operation
@@ -419,9 +224,130 @@ func (pf PolynomialField) LagrangeInterpolation(datapoints []*big.Int) (polynom 
 	return polynom
 }
 
+// LagrangeInterpolation performs the Lagrange Interpolation / Lagrange Polynomials operation
+func (pf *PolynomialField) PrecomputeLagrangeFFT(fft *FFT_PrecomputedParas) {
+	// https://en.wikipedia.org/wiki/Lagrange_polynomial
+
+	var base = func(pointPos int) {
+		var lagrangeBase_i []*big.Int
+		facBig := big.NewInt(1)
+
+		for i := 0; i < pointPos; i++ {
+			facBig = pf.F.Mul(facBig, pf.F.Sub(fft.RootOfUnitys[pointPos], fft.RootOfUnitys[i]))
+		}
+		for i := pointPos + 1; i < fft.Size; i++ {
+			facBig = pf.F.Mul(facBig, pf.F.Sub(fft.RootOfUnitys[pointPos], fft.RootOfUnitys[i]))
+		}
+		hf := pf.F.Inverse(facBig)
+
+		lagrangeBase_i = []*big.Int{new(big.Int).SetInt64(1)}
+		for i := 0; i < fft.Size; i++ {
+			if i != pointPos {
+				lagrangeBase_i = pf.Mul(lagrangeBase_i, []*big.Int{fft.RootOfUnitys[(i+(fft.Size>>1))%fft.Size], big.NewInt(int64(1))})
+			}
+		}
+		lagrangeBase_i = pf.MulScalar(lagrangeBase_i, hf)
+		pf.F.basesClassic[baseLengthPair{baseIndex: pointPos, Length: fft.Size}] = lagrangeBase_i
+	}
+
+	var hardwork = func(start, end int) {
+		for i := start; i < end; i++ {
+			base(i)
+		}
+	}
+	Parallelize(fft.Size, hardwork)
+
+}
+
+// LagrangeInterpolation performs the Lagrange Interpolation / Lagrange Polynomials operation
+func (pf *PolynomialField) PrecomputeLagrange(totalPoints int) {
+	// https://en.wikipedia.org/wiki/Lagrange_polynomial
+
+	var base = func(pointPos int) {
+		var r []*big.Int
+		facBig := big.NewInt(1)
+
+		for i := 0; i < pointPos; i++ {
+			facBig = pf.F.Mul(facBig, big.NewInt(int64(pointPos-i)))
+		}
+		for i := pointPos + 1; i < totalPoints; i++ {
+			facBig = pf.F.Mul(facBig, big.NewInt(int64(pointPos-i)))
+		}
+		hf := pf.F.Inverse(facBig)
+
+		r = []*big.Int{new(big.Int).SetInt64(1)}
+		for i := 0; i < totalPoints; i++ {
+			if i != pointPos {
+				r = pf.Mul(r, []*big.Int{big.NewInt(int64(-i)), big.NewInt(int64(1))})
+			}
+		}
+		r = pf.MulScalar(r, hf)
+		pf.F.basesClassic[baseLengthPair{baseIndex: pointPos, Length: totalPoints}] = r
+	}
+
+	var hardwork = func(start, end int) {
+		for i := start; i < end; i++ {
+			base(i)
+		}
+	}
+	Parallelize(totalPoints, hardwork)
+
+}
+
+// LagrangeInterpolation performs the Lagrange Interpolation / Lagrange Polynomials operation
+func (pf *PolynomialField) LagrangeInterpolation_RootOfUnity(fft *FFT_PrecomputedParas, datapoints []*big.Int) (polynom []*big.Int) {
+	// https://en.wikipedia.org/wiki/Lagrange_polynomial
+	if len(datapoints) != fft.Size {
+		panic("not allowed")
+	}
+
+	var base = func(pointPos, totalPoints int) (r []*big.Int) {
+
+		if v, ex := pf.F.basesClassic[baseLengthPair{baseIndex: pointPos, Length: totalPoints}]; ex {
+			return v
+		}
+		panic("asdf")
+
+		return r
+	}
+	//if IsZeroArray(datapoints){
+	//	//at position -1 we store the all zero polynomial
+	//	if v,ex:=pf.F.basesClassic[baseLengthPair{baseIndex: -1,Length: len(datapoints)}];ex{
+	//		return v
+	//	}
+	//	DomainPoly := pf.DomainPolynomial(len(datapoints))
+	//	pf.F.basesClassic[baseLengthPair{baseIndex: -1,Length: len(datapoints)}]= DomainPoly
+	//	return DomainPoly
+	//}
+	polynom = ArrayOfBigZeros(len(datapoints))
+
+	//var hardwork =func(start,end int){
+	//	for i, v := range datapoints[start:end] {
+	//		if v.Cmp(bigZero) == 0 {
+	//			continue
+	//		}
+	//		prod := pf.MulScalar(base(i, len(datapoints)), v)
+	//		polynom = pf.Add(polynom, prod)
+	//	}
+	//}
+	for i, v := range datapoints {
+		if v.Cmp(bigZero) == 0 {
+			continue
+		}
+		prod := pf.MulScalar(base(i, len(datapoints)), v)
+		polynom = pf.Add(polynom, prod)
+	}
+	//Parallelize(len(datapoints),hardwork)
+	return polynom
+}
+
 func (pf PolynomialField) MulScalar(polynomial []*big.Int, w *big.Int) (scaledPolynomial []*big.Int) {
 	scaledPolynomial = make([]*big.Int, len(polynomial))
 	for i := 0; i < len(polynomial); i++ {
+		if polynomial[i].Cmp(bigZero) == 0 {
+			scaledPolynomial[i] = new(big.Int).SetInt64(0)
+			continue
+		}
 		scaledPolynomial[i] = pf.F.Mul(w, polynomial[i])
 	}
 	return
@@ -452,8 +378,7 @@ func (pf PolynomialField) PointwiseSub(a []*big.Int, b []*big.Int) (ab []*big.In
 func (pf PolynomialField) LinearCombine(polynomials [][]*big.Int, w []*big.Int) (scaledPolynomials [][]*big.Int) {
 	scaledPolynomials = make([][]*big.Int, len(w))
 	for i := 0; i < len(w); i++ {
-		scaledPolynomials[i] = pf.Mul([]*big.Int{w[i]}, polynomials[i])
-
+		scaledPolynomials[i] = pf.MulScalar(polynomials[i], w[i])
 	}
 	return
 }
@@ -465,26 +390,7 @@ func (pf PolynomialField) AddPolynomials(polynomials [][]*big.Int) (sumPoly []*b
 	return
 }
 
-//checks if a integer is a power of 2
-//From Henry Warrens Hackers Delight
-func IsPowerTwo(in uint64) bool {
-	if in == 0 {
-		return false
-	}
-	n := in & (in - 1)
-	if n == 0 {
-		return true
-	}
-	return false
-}
-
-func nextPowerOfTwo(n uint) uint {
-	p := uint(1)
-	if (n & (n - 1)) == 0 {
-		return n
-	}
-	for p < n {
-		p <<= 1
-	}
-	return p
+//EvalPoly Evaluates a polynomial v at position x, using the Horners Rule
+func (pf PolynomialField) EvalPoly(v []*big.Int, x *big.Int) *big.Int {
+	return pf.F.EvalPoly(v, x)
 }

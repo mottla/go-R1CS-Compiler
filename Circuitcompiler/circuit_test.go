@@ -1,4 +1,4 @@
-package circuitcompiler
+package Circuitcompiler
 
 import (
 	"fmt"
@@ -31,8 +31,8 @@ func TestPrintTree(t *testing.T) {
 		fmt.Println("\n unreduced")
 		fmt.Println(test)
 
-		gates := program.Execute()
-
+		container := program.Execute()
+		gates := container.orderedmGates
 		for _, g := range gates {
 			fmt.Printf("\n %v", g)
 		}

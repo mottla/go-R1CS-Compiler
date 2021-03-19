@@ -1,4 +1,4 @@
-package circuitcompiler
+package Circuitcompiler
 
 // This package provides a Lexer that globalFunction similarly to Rob Pike's discussion
 // about lexer design in this [talk](https://www.youtube.com/watch?v=HxaD_trXwRE).
@@ -129,7 +129,7 @@ func (ch TokenType) String() string {
 	case UNASIGNEDVAR:
 		return "UNASIGNEDVAR"
 	case IDENTIFIER_VARIABLE:
-		return "identifier"
+		return "Identifier"
 	case CommentToken:
 		return "commentToken"
 	case AssignmentOperatorToken:
@@ -451,8 +451,8 @@ func IdentState(l *Lexer) StateFunc {
 		return ProbablyWhitespaceState
 	}
 
-	//it wasnt a keyword, so we assume its an identifier
-	//identifiers do not require a whitespace (like func foo(), has '(' after identifier 'foo')
+	//it wasnt a keyword, so we assume its an Identifier
+	//identifiers do not require a whitespace (like func foo(), has '(' after Identifier 'foo')
 	l.Emit(IDENTIFIER_VARIABLE)
 	return ProbablyWhitespaceState
 }
