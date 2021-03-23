@@ -100,7 +100,7 @@ func (fq Fq) EvalSparsePoly(poly *AvlTree, at *big.Int) (result *big.Int) {
 		//we get x^15 = (x^8)^1 * (x^3)^2 * (x)^1
 		for _, highestAlreadyComputedExponent := range alredyComputedExponents.DecendingNodes() {
 			q, rem = euclid(rem, highestAlreadyComputedExponent.Key)
-			vv := fq.ExpInt(highestAlreadyComputedExponent.Value, q)
+			vv := fq.ExpInt(highestAlreadyComputedExponent.Value, int64(q))
 			alredyComputedExponents.Insert(q*highestAlreadyComputedExponent.Key, vv)
 			nextPower = fq.Mul(nextPower, vv)
 			if rem == 0 {
@@ -122,36 +122,38 @@ func (fq Fq) SubToSparse(a, b *AvlTree) *AvlTree {
 	return a
 }
 
-// LagrangeInterpolation performs the Lagrange Interpolation / Lagrange Polynomials operation
-func (f Fq) InterpolateSparseArray(dataArray *AvlTree, degree int) (polynom *AvlTree) {
+//LagrangeInterpolation performs the Lagrange Interpolation / Lagrange Polynomials operation
+func (pf PolynomialField) InterpolateSparseArray(dataArray *AvlTree, degree int) (polynom *AvlTree) {
 	// https://en.wikipedia.org/wiki/Lagrange_polynomial
 	if dataArray.MaxPower() >= uint(degree) {
 		panic("interpolation degree cannot be smaller then highest degree in the polynomial")
 	}
 	var base = func(pointPos, totalPoints int) (r *AvlTree) {
 
-		if v, ex := f.bases[baseLengthPair{baseIndex: pointPos, Length: totalPoints}]; ex {
+		if v, ex := pf.bases[baseLengthPair{baseIndex: pointPos, Length: totalPoints}]; ex {
 			return v
 		}
 		//r = NewAvlTree()
 		facBig := big.NewInt(1)
 
 		for i := 0; i < pointPos; i++ {
-			facBig = f.Mul(facBig, big.NewInt(int64(pointPos-i)))
+			facBig = pf.F.Mul(facBig, big.NewInt(int64(pointPos-i)))
 		}
 		for i := pointPos + 1; i < totalPoints; i++ {
-			facBig = f.Mul(facBig, big.NewInt(int64(pointPos-i)))
+			facBig = pf.F.Mul(facBig, big.NewInt(int64(pointPos-i)))
 		}
 
 		r = NewSparseArrayWith(uint(0), new(big.Int).SetInt64(1))
 		for i := 0; i < totalPoints; i++ {
 			if i != pointPos {
-				r = f.MulSparse(r, NewSparseArrayFromArray([]*big.Int{big.NewInt(int64(-i)), big.NewInt(int64(1))}))
+				r = pf.F.MulSparse(r, NewSparseArrayFromArray([]*big.Int{big.NewInt(int64(-i)), big.NewInt(int64(1))}))
 			}
 		}
-		hf := f.Inverse(facBig)
-		r = f.MulSparseScalar(r, hf)
-		f.bases[baseLengthPair{baseIndex: pointPos, Length: totalPoints}] = r
+		hf := pf.F.Inverse(facBig)
+		r = pf.F.MulSparseScalar(r, hf)
+		pf.mutex.Lock()
+		pf.bases[baseLengthPair{baseIndex: pointPos, Length: totalPoints}] = r
+		pf.mutex.Unlock()
 		return r
 	}
 	//if  IsZeroArray(dataArray.ToArray(degree)){
@@ -168,8 +170,8 @@ func (f Fq) InterpolateSparseArray(dataArray *AvlTree, degree int) (polynom *Avl
 	//}
 	polynom = NewAvlTree()
 	for v := range dataArray.ChannelNodes(true) {
-		prod := f.MulSparseScalar(base(int(v.Key), degree), v.Value)
-		polynom = f.AddToSparse(polynom, prod)
+		prod := pf.F.MulSparseScalar(base(int(v.Key), degree), v.Value)
+		polynom = pf.F.AddToSparse(polynom, prod)
 	}
 	return polynom
 }

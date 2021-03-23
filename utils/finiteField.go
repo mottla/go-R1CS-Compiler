@@ -33,9 +33,8 @@ type baseLengthPair struct {
 
 // Fq is the Z field over modulus Q
 type Fq struct {
-	Q            *big.Int // Q
-	bases        map[baseLengthPair]*AvlTree
-	basesClassic map[baseLengthPair][]*big.Int
+	Q *big.Int // Q
+
 }
 
 // NewFiniteField generates a new Fq
@@ -45,8 +44,6 @@ func NewFiniteField(order *big.Int) Fq {
 	}
 	return Fq{
 		order,
-		make(map[baseLengthPair]*AvlTree),
-		make(map[baseLengthPair][]*big.Int),
 	}
 }
 
@@ -112,9 +109,6 @@ func (fq Fq) Mul(a, b *big.Int) *big.Int {
 	return new(big.Int).Mod(m, fq.Q)
 	// return m
 }
-func (fq Fq) MulScalar(base, e *big.Int) *big.Int {
-	return fq.Mul(base, e)
-}
 
 // Inverse returns the inverse on the Fq
 func (fq Fq) Inverse(a *big.Int) *big.Int {
@@ -140,69 +134,82 @@ func (fq Fq) Square(a *big.Int) *big.Int {
 // Exp performs the exponential over Fq
 //unsafe when e is negative
 func (fq Fq) Exp(base *big.Int, e *big.Int) *big.Int {
-	res := fq.One()
-	rem := fq.Copy(e)
-	exp := base
-
-	for !bytes.Equal(rem.Bytes(), bigZero.Bytes()) {
-		if BigIsOdd(rem) {
-			res = fq.Mul(res, exp)
-		}
-		exp = fq.Square(exp)
-		rem.Rsh(rem, 1)
-	}
-	return res
+	return new(big.Int).Exp(base, e, fq.Q)
 }
 
 // Exp performs the exponential over Fq
-func (fq Fq) ExpInt(base *big.Int, e uint) *big.Int {
-	res := fq.One()
-	exp := base
-
-	for e > 0 {
-		if e&1 == 1 {
-			res = fq.Mul(res, exp)
-		}
-		exp = fq.Square(exp)
-		e >>= 1
-	}
-	return res
+func (fq Fq) ExpInt(base *big.Int, e int64) *big.Int {
+	return fq.Exp(base, new(big.Int).SetInt64(e))
 }
 
 //EvalPoly Evaluates a polynomial v at position x, using the Horners Rule
-func (fq Fq) EvalPoly(v []*big.Int, x *big.Int) *big.Int {
-	r := new(big.Int).Set(v[0])
-	for i := int64(1); i < int64(len(v)); i++ {
-		if v[i].Cmp(bigZero) != 0 {
-			//note since we expect the polynomials to be sparse, we compute the x^i straight away.. maybe incremental would still be more efficient
-			r = fq.Add(r, fq.Mul(v[i], fq.Exp(x, big.NewInt(i))))
-		}
+func (fq Fq) EvalPoly(v Poly, x *big.Int) *big.Int {
 
+	if x.Cmp(bigZero) == 0 {
+		return new(big.Int).Set(v[0])
 	}
-	return r
+	if !v.IsSparse() {
+		return fq.evalPoly_horner(v, x)
+	}
+	//for i := int64(1); i < int64(len(v)); i++ {
+	//	if v[i].Cmp(bigZero) != 0 {
+	//		//note since we expect the polynomials to be sparse, we compute the x^i straight away.. maybe incremental would still be more efficient
+	//		r = fq.Add(r, fq.Mul(v[i], fq.Exp(x, big.NewInt(i))))
+	//	}
+	//}
+	return fq.evalSparsePoly(v, x)
 }
 
-//returns (twoadicity,remainingFactor) s.t. : remainingFactor * 2^twoadicity == p -1, where p is the field characteristic
-func (fq Fq) Adicity() (twoadicity int, remainingFactor *big.Int) {
-	adicity := 0
-	var b = new(big.Int).SetInt64(1)
-	b.Lsh(b, uint(fq.Q.BitLen())) // 1<<bitlen*2 == 2^2*bitlen
-	remainingFactor = new(big.Int)
-	for i := fq.Q.BitLen(); i >= 0; i-- {
-		if new(big.Int).Mod(fq.Q, b).Cmp(bigOne) == 0 {
-			adicity = i
-			remainingFactor.Div(new(big.Int).Sub(fq.Q, bigOne), b)
-			break
+//EvalPoly Evaluates a sparse polynomial
+func (fq Fq) evalSparsePoly(poly Poly, at *big.Int) (result *big.Int) {
+
+	//tree that stores intermediate results of exponent ladder. Key is the exponent. value is at^key
+	alredyComputedExponents := NewAvlTree()
+	alredyComputedExponents.InsertNoOverwriteAllowed(1, at)
+	result = new(big.Int).SetInt64(0)
+	for deg, coefficient := range poly {
+		if coefficient.Cmp(bigZero) == 0 {
+			continue
 		}
-		b.Rsh(b, 1)
+		rem := uint(deg)
+		q := uint(0)
+		nextPower := new(big.Int).SetInt64(1)
+		//apply a greedy algorithm to tackle the knapsack problem we face her. we want to create the
+		//next power by reusing already computed powers, starting from the biggest.
+		//example: we want x^15, we have x^8,x^3,x
+		//we get x^15 = (x^8)^1 * (x^3)^2 * (x)^1
+		for _, highestAlreadyComputedExponent := range alredyComputedExponents.DecendingNodes() {
+			q, rem = euclid(rem, highestAlreadyComputedExponent.Key)
+			vv := fq.ExpInt(highestAlreadyComputedExponent.Value, int64(q))
+			alredyComputedExponents.Insert(q*highestAlreadyComputedExponent.Key, vv)
+			nextPower = fq.Mul(nextPower, vv)
+			if rem == 0 {
+				break
+			}
+		}
+		result = fq.Add(result, fq.Mul(coefficient, nextPower))
 	}
-	if new(big.Int).Mul(remainingFactor, b).Cmp(new(big.Int).Sub(fq.Q, bigOne)) != 0 {
-		panic("c * 2^adicity != p -1 ")
+	return result
+}
+
+//EvalPoly Evaluates a polynomial v at position x, using the Horners Rule
+func (fq Fq) evalPoly_horner(v []*big.Int, x *big.Int) *big.Int {
+	if len(v) == 1 {
+		return v[0]
 	}
-	if adicity == 0 {
-		fmt.Print("warning. adicity is 0")
+	return fq.Add(fq.Mul(fq.EvalPoly(v[1:], x), x), v[0])
+
+}
+
+//AdicityBig returns the biggest power of 2, that divides the input i.e. 2^n | in
+func AdicityBig(input *big.Int) (twoadicity int) {
+	bits := fmt.Sprintf("%b", input)
+	ad := 0
+	for len(bits) != 0 && string(bits[len(bits)-1]) == "0" {
+		bits = bits[:len(bits)-1]
+		ad += 1
 	}
-	return adicity, remainingFactor
+	return ad
 }
 
 //this is the same function as above, but imperative style. the speed difference turned out to be marginally better this way, however FAR LESS ELEGANT
@@ -212,7 +219,7 @@ func (fq Fq) Adicity() (twoadicity int, remainingFactor *big.Int) {
 //	for i := len(v)-2; i >= 0; i-- {
 //		if v[i].Cmp(bigZero) != 0 {
 //			//note since we expect the polynomials to be sparse, we compute the x^i straight away.. maybe incremental would still be more efficient
-//			r = fq.Add(fq.Mul(r, x),v[i])
+//			r = fq.Add(fq.MulNaive(r, x),v[i])
 //		}
 //
 //	}

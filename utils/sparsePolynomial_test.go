@@ -82,7 +82,7 @@ func TestMultiply(t *testing.T) {
 	pf := NewPolynomialField(f)
 
 	before := time.Now()
-	c := pf.Mul(a, b)
+	c := pf.MulNaive(a, b)
 	fmt.Println("multiply with horner took", time.Since(before))
 	sparseA := NewAvlTree()
 	sparseB := NewAvlTree()
@@ -314,7 +314,7 @@ func TestDivide2(t *testing.T) {
 	reconstructed := f.EvalSparsePoly(cd, at)
 	sparseEvaluated := f.EvalSparsePoly(sparseA, at)
 
-	re := polyField.Mul(cdiv, b)
+	re := polyField.MulNaive(cdiv, b)
 	re = polyField.Add(re, crem)
 	reEval := f.EvalPoly(re, at)
 	//fmt.Println(f.EvalSparsePoly(sparseC,b16).String())
@@ -367,7 +367,6 @@ func TestDivide(t *testing.T) {
 	if classic1.Cmp(classic2) != 0 {
 		t.Error(fmt.Sprintf("classic poly %v and sparse poly %v evaluation differ. At leas one of both must be wrong", classic1.String(), classic2.String()))
 	}
-
 }
 
 func TestSparseLagrangeInterpolation(t *testing.T) {
@@ -393,7 +392,7 @@ func TestSparseLagrangeInterpolation(t *testing.T) {
 	}
 
 	sparse := NewSparseArrayFromArray(Ypoints)
-	sparse = f.InterpolateSparseArray(sparse, Npoints)
+	sparse = pf.InterpolateSparseArray(sparse, Npoints)
 	alpha := pf.LagrangeInterpolation(Ypoints)
 	for i := Npoints - 1; i >= 0; i-- {
 		if f.EvalPoly(alpha, Xpoints[i]).Cmp(Ypoints[i]) != 0 {

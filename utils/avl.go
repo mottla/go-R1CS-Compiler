@@ -8,19 +8,6 @@ import (
 	"sync"
 )
 
-func abs(i int) int {
-	if i < 0 {
-		return -i
-	}
-	return i
-}
-
-func maximum(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
 func (s AvlNode) String() string {
 	return fmt.Sprintf("(%v,%v)", s.Key(), s.Value().String())
 }

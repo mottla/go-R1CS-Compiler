@@ -127,20 +127,20 @@ func mulFactors(leftFactors, rightFactors factors) (result factors) {
 
 			if left.Typ.Type == NumberToken && right.Typ.Type&IN != 0 {
 				leftFactors[i] = factor{Typ: right.Typ, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
-				//leftFactors[i] = &factor{Typ: right.Typ, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
+				//leftFactors[i] = &factor{Typ: right.Typ, multiplicative: field.MulNaive(right.multiplicative, left.multiplicative)}
 				continue
 			}
 
 			if left.Typ.Type&IN != 0 && right.Typ.Type == NumberToken {
 				leftFactors[i] = factor{Typ: left.Typ, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
-				//leftFactors[i] = &factor{Typ: left.Typ, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
+				//leftFactors[i] = &factor{Typ: left.Typ, multiplicative: field.MulNaive(right.multiplicative, left.multiplicative)}
 				continue
 			}
 
 			if right.Typ.Type&left.Typ.Type == NumberToken {
 				res := field.Mul(right.multiplicative, left.multiplicative)
 				leftFactors[i] = factor{Typ: Token{Type: NumberToken, Identifier: res.String()}, multiplicative: res}
-				//res := field.Mul(right.multiplicative, left.multiplicative)
+				//res := field.MulNaive(right.multiplicative, left.multiplicative)
 				//leftFactors[i] = &factor{Typ: Token{Type: NumberToken, Identifier: res.String()}, multiplicative: res}
 				continue
 
@@ -151,7 +151,7 @@ func mulFactors(leftFactors, rightFactors factors) (result factors) {
 			//if right.Typ.Type&left.Typ.Type&IN != 0 {
 			//	if left.Typ.Identifier == right.Typ.Identifier {
 			//		if right.invert != left.invert {
-			//			leftFactors[i] = &factor{Typ: Token{Type: NumberToken}, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
+			//			leftFactors[i] = &factor{Typ: Token{Type: NumberToken}, multiplicative: field.MulNaive(right.multiplicative, left.multiplicative)}
 			//			continue
 			//		}
 			//	}
@@ -164,13 +164,6 @@ func mulFactors(leftFactors, rightFactors factors) (result factors) {
 		}
 	}
 	return leftFactors
-}
-
-//returns the absolute value of a signed int and a flag telling if the input was positive or not
-//this implementation is awesome and fast (see Henry S Warren, Hackers's Delight)
-func abs(n int) (val int, positive bool) {
-	y := n >> 63
-	return (n ^ y) - y, y == 0
 }
 
 //adds two factors to one iff they are both are constants or of the same variable

@@ -4,145 +4,10 @@ import (
 	"fmt"
 	"github.com/mottla/go-R1CS-Compiler/Circuitcompiler"
 	"github.com/mottla/go-R1CS-Compiler/testPrograms"
-	"github.com/mottla/go-R1CS-Compiler/utils"
 	"github.com/stretchr/testify/assert"
-	"math/big"
 	"testing"
 	"time"
 )
-
-func TestGenerateAndVerifyProof_OldArray(t *testing.T) {
-
-	for _, test := range testPrograms.TestPrograms {
-		if test.Skip {
-			continue
-		}
-
-		program := Circuitcompiler.Parse(test.Code, true)
-
-		fmt.Println("Code>>")
-		fmt.Println(test.Code)
-
-		before := time.Now()
-		fmt.Println("Generating CRS...")
-		container := program.Execute()
-		gates := container.OrderedGates()
-		fmt.Println("\n generating R1CS")
-		r1cs := program.GatesToR1CS(gates)
-
-		trasposedR1Cs := r1cs.Transpose()
-		//fmt.Println(r1cs.L)
-		//fmt.Println(r1cs.R)
-		//fmt.Println(r1cs.O)
-
-		setup, err := GenerateTrustedSetup(program.GlobalInputCount(), trasposedR1Cs)
-		fmt.Println("CRS generation time elapsed:", time.Since(before))
-		assert.NoError(t, err)
-
-		for _, io := range test.IO {
-			inputs := Circuitcompiler.CombineInputs(program.GetMainCircuit().Inputs, io.Inputs)
-			trace, err := Circuitcompiler.CalculateTrace(r1cs, inputs)
-
-			assert.NoError(t, err)
-			fmt.Println("input")
-			fmt.Println(inputs)
-			fmt.Println("trace")
-			fmt.Println(trace)
-
-			px := CombinePolynomials2(trace, trasposedR1Cs)
-
-			hx, rx := utils.Field.PolynomialField.Div(px, setup.Pk.Domain)
-
-			if !utils.IsZeroArray(rx) {
-				t.Error("Px/Dx has a rest")
-			}
-
-			var bigZero = big.NewInt(int64(0))
-
-			//Test if P(x) is indeed 0 at each gate index
-			for i := 0; i < len(gates); i++ {
-				if bigZero.Cmp(utils.Field.ArithmeticField.EvalPoly(px, new(big.Int).SetInt64(int64(i)))) != 0 {
-					t.Error("Px must be zero ate each gate")
-				}
-			}
-			before := time.Now()
-			proof, err := GenerateProofs(program.GlobalInputCount(), &setup.Pk, trace, hx)
-			fmt.Println("proof generation time elapsed:", time.Since(before))
-			assert.Nil(t, err)
-			before = time.Now()
-			assert.True(t, VerifyProof(&setup.Pk, proof, trace[:program.GlobalInputCount()]))
-			fmt.Println("verify proof time elapsed:", time.Since(before))
-			fmt.Println("Proof Elements: ", proof)
-		}
-	}
-}
-
-func TestGenerateAndVerifyProof_Sparse(t *testing.T) {
-
-	for _, test := range testPrograms.TestPrograms {
-		if test.Skip {
-			continue
-		}
-
-		program := Circuitcompiler.Parse(test.Code, true)
-
-		fmt.Println("Code>>")
-		fmt.Println(test.Code)
-
-		before := time.Now()
-		fmt.Println("Generating CRS...")
-		container := program.Execute()
-		gates := container.OrderedGates()
-
-		fmt.Println("\n generating R1CS")
-		r1cs := program.GatesToSparseR1CS(gates)
-
-		trasposedR1Cs := r1cs.TransposeSparse()
-		fmt.Println(r1cs.L)
-		fmt.Println(r1cs.R)
-		fmt.Println(r1cs.O)
-
-		setup, err := GenerateTrustedSetup_sparse(program.GlobalInputCount(), trasposedR1Cs)
-		fmt.Println("CRS generation time elapsed:", time.Since(before))
-		assert.NoError(t, err)
-
-		for _, io := range test.IO {
-			inputs := Circuitcompiler.CombineInputs(program.GetMainCircuit().Inputs, io.Inputs)
-			trace, err := Circuitcompiler.CalculateTrace_sparse(r1cs, inputs)
-
-			assert.NoError(t, err)
-			fmt.Println("input")
-			fmt.Println(inputs)
-			fmt.Println("trace")
-			fmt.Println(trace)
-
-			px := CombineSparsePolynomials(trace, trasposedR1Cs)
-
-			hx, rx := utils.Field.ArithmeticField.DivideSparse(px, utils.NewSparseArrayFromArray(setup.Pk.Domain))
-
-			if rx.Size() > 0 {
-				t.Error("Px/Dx has a rest")
-			}
-
-			var bigZero = big.NewInt(int64(0))
-
-			//Test if P(x) is indeed 0 at each gate index
-			for i := 0; i < len(gates); i++ {
-				if bigZero.Cmp(utils.Field.ArithmeticField.EvalSparsePoly(px, new(big.Int).SetInt64(int64(i)))) != 0 {
-					t.Error("Px must be zero ate each gate")
-				}
-			}
-			before := time.Now()
-			proof, err := GenerateProofs_sparse(program.GlobalInputCount(), &setup.Pk, trace, hx)
-			fmt.Println("proof generation time elapsed:", time.Since(before))
-			assert.Nil(t, err)
-			before = time.Now()
-			assert.True(t, VerifyProof(&setup.Pk, proof, trace[:program.GlobalInputCount()]))
-			fmt.Println("verify proof time elapsed:", time.Since(before))
-			fmt.Println("Proof Elements: ", proof)
-		}
-	}
-}
 
 func TestGenerateAndVerifyProof_FFT(t *testing.T) {
 
@@ -157,45 +22,51 @@ func TestGenerateAndVerifyProof_FFT(t *testing.T) {
 		fmt.Println(test.Code)
 
 		before := time.Now()
-		fmt.Println("Generating CRS...")
+		fmt.Println("Generating SRS...")
+		tt := time.Now()
 		container := program.Execute()
 		gates := container.OrderedGates()
-
-		fmt.Println("\n generating R1CS")
+		fmt.Println("Parsing into arithmetic circuit took ", time.Since(tt))
+		fmt.Println("Generating R1CS...")
+		tt = time.Now()
 		r1cs := program.GatesToR1CS(gates)
-
+		fmt.Println("Parsing arithmetic circuit into R1CS took ", time.Since(tt))
 		trasposedR1Cs := r1cs.Transpose()
 		//fmt.Println(r1cs.L)
 		//fmt.Println(r1cs.R)
 		//fmt.Println(r1cs.O)
-
+		fmt.Println("Number of gates ", r1cs.NumberOfGates)
 		setup, err := GenerateTrustedSetup_FFT(program.GlobalInputCount(), trasposedR1Cs)
-		fmt.Println("CRS generation time elapsed:", time.Since(before))
+		fmt.Println("SRS generation time elapsed:", time.Since(before))
 		assert.NoError(t, err)
 
 		for _, io := range test.IO {
+			fmt.Println("Start Proof Generation...")
 			inputs := Circuitcompiler.CombineInputs(program.GetMainCircuit().Inputs, io.Inputs)
+
+			tt = time.Now()
+			fmt.Println("Compute trace...")
 			trace, err := Circuitcompiler.CalculateTrace(r1cs, inputs)
+			fmt.Println("Compute trace took ", time.Since(tt))
 
 			assert.NoError(t, err)
-			fmt.Println("input")
-			fmt.Println(inputs)
-			fmt.Println("trace")
-			fmt.Println(trace)
 
+			tt = time.Now()
+			fmt.Println("Compute divisor polynomial H(x)... ")
 			hx := CombinePolynomials_Efficient(setup.fftParas, trace, trasposedR1Cs)
-			pf := utils.Field.PolynomialField
-			f := utils.Field.ArithmeticField
-			var bigZero = big.NewInt(int64(0))
-			v := new(big.Int).SetInt64(1)
+			fmt.Println("Compute divisor polynomial H(x)  took ", time.Since(tt))
+			//pf := utils.Field.PolynomialField
+			//f := utils.Field.ArithmeticField
+			//var bigZero = big.NewInt(int64(0))
+			//v := new(big.Int).SetInt64(1)
 
-			for i := uint(0); i < uint(r1cs.NumberOfGates); i++ {
-				L := pf.EvalPoly(pf.Mul(hx, setup.fftParas.Domain), v)
-				v = f.Mul(v, setup.fftParas.RootOfUnity)
-				if L.Cmp(bigZero) != 0 {
-					t.Error("Px must be zero ate each gate")
-				}
-			}
+			//for i := uint(0); i < uint(r1cs.NumberOfGates); i++ {
+			//	L := pf.EvalPoly(pf.MulNaive(hx, setup.fftParas.Domain), v)
+			//	v = f.MulNaive(v, setup.fftParas.RootOfUnity)
+			//	if L.Cmp(bigZero) != 0 {
+			//		t.Error("Px must be zero ate each gate")
+			//	}
+			//}
 
 			before := time.Now()
 			proof, err := GenerateProofs(program.GlobalInputCount(), &setup.Pk, trace, hx)

@@ -19,3 +19,12 @@ func TestNextPowerOfTwo(t *testing.T) {
 		}
 	}
 }
+
+func TestAddicity(t *testing.T) {
+
+	for i := 0; i < 62; i++ {
+		if Addicity(1<<i) != i {
+			t.Error("err")
+		}
+	}
+}

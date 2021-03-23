@@ -14,15 +14,22 @@ type FFT_PrecomputedParas struct {
 	RootOfUnity_invs             []*big.Int // 1,w^-1,w^-2,w^-3,w^-4..
 	Size                         int        //number of points we want to consider, rounded to the next power of two
 	pf                           *PolynomialField
-	Domain                       []*big.Int //p(x) = x^size - 1
+	Domain                       Poly //p(x) = x^size - 1
 }
 
 func (pf *PolynomialField) PrepareFFT(length int) *FFT_PrecomputedParas {
+
+	if v, ex := pf.fftPras[NextPowerOfTwo(length)]; ex {
+		return v
+	}
+
 	paras := new(FFT_PrecomputedParas)
 	paras.pf = pf
-	adicity, _ := pf.F.Adicity()
-	//TODO analyse where this number comes from. sage tells us, that it indeed has order 2^adicity (over bn256)
-	//change of curve will cause things to break here
+	adicity := AdicityBig(new(big.Int).Sub(pf.F.Q, bigOne))
+	//for bn256
+	//The factors of p-1 = 2^28 * 3^2 * 13 * 29 * 983 * 11003 * 237073 * 405928799 * 1670836401704629 * 13818364434197438864469338081
+	//this root of untiy  is 5^(3^2 * 13 * 29 * 983 * 11003 * 237073 * 405928799 * 1670836401704629 * 13818364434197438864469338081)
+	//note that 5 is the lowest number, that is not a factor of p-1.
 	rootOfUnity, _ := new(big.Int).SetString("19103219067921713944291392827692070036145651957329286315305642004821462161904", 10)
 	//now find the closest possible power of two, to fill up the datapoints
 	bit := bits.Len(uint(NextPowerOfTwo(length)))
@@ -39,11 +46,11 @@ func (pf *PolynomialField) PrepareFFT(length int) *FFT_PrecomputedParas {
 	// exponent = c*2^(adicity-(bit+1))
 	// now for any k in Field, (k^(exponent))^2^(bit+1)==1 mod P
 	//fmt.Println(c.String())
-	exponent := new(big.Int).Lsh(new(big.Int).SetInt64(1), uint(adicity-bit-1))
+	//exponent := new(big.Int).Lsh(new(big.Int).SetInt64(1), uint(adicity-bit))
 
-	alphaSqrt := pf.F.Exp(rootOfUnity, exponent)
+	//alphaSqrt := pf.F.Exp(rootOfUnity, exponent)
 	//fmt.Println(alphaSqrt.String())
-	alpha := pf.F.Mul(alphaSqrt, alphaSqrt)
+	alpha := pf.F.ExpInt(rootOfUnity, 1<<(adicity-bit))
 	alphaInv := pf.F.Inverse(alpha)
 	if pf.F.Exp(alpha, new(big.Int).Lsh(new(big.Int).SetInt64(1), uint(bit))).Cmp(bigOne) != 0 {
 		panic("(k^(exponent))^2^(bit+1) != 1 mod P ")
@@ -82,13 +89,17 @@ func (pf *PolynomialField) PrepareFFT(length int) *FFT_PrecomputedParas {
 	if pf.F.Exp(bigAlphas_SS[len(bigAlphas_SS)-1], new(big.Int).SetInt64(2)).Cmp(bigOne) != 0 {
 		panic("cannot happen")
 	}
-
+	pf.fftPras[NextPowerOfTwo(length)] = paras
 	return paras
 }
 
-func (p *FFT_PrecomputedParas) InvDFFT(ValuesAtRoots []*big.Int, shift *big.Int) (coefficients []*big.Int) {
+//input an array of datapoints, returns the coefficients of a polynomial that
+//interpolates the data at the roots of unity
+func (pf *PolynomialField) InvDFFT(ValuesAtRoots []*big.Int, shift *big.Int) (coefficients Poly) {
+	p := pf.PrepareFFT(len(ValuesAtRoots))
+
 	c1 := make(chan []*big.Int)
-	go p._dfft(p.RootOfUnity_invs_SquareSteps, p.RootOfUnity_invs, p.ExtendPolyToDomain(ValuesAtRoots), c1)
+	go p._dfft(p.RootOfUnity_invs_SquareSteps, p.RootOfUnity_invs, ExtendArrayWithZeros(ValuesAtRoots, p.Size), c1)
 	coefficients = <-c1
 	div := new(big.Int).SetInt64(int64(len(coefficients)))
 	for i, v := range coefficients {
@@ -98,21 +109,13 @@ func (p *FFT_PrecomputedParas) InvDFFT(ValuesAtRoots []*big.Int, shift *big.Int)
 	//return coefficients
 }
 
-func (p *FFT_PrecomputedParas) DFFT(polynomial []*big.Int, shift *big.Int) (evaluatedAtRoots []*big.Int) {
+func (pf *PolynomialField) DFFT(polynomial Poly, shift *big.Int) (evaluatedAtRoots []*big.Int) {
+	p := pf.PrepareFFT(len(polynomial))
 	c1 := make(chan []*big.Int)
-	extd := p.ExtendPolyToDomain(polynomial)
+	extd := ExtendArrayWithZeros(polynomial, p.Size)
 
 	go p._dfft(p.RootOfUnitys_SquareSteps, p.RootOfUnitys, p.pf.shift(shift, false, extd), c1)
 	return <-c1
-}
-
-func (p *FFT_PrecomputedParas) ExtendPolyToDomain(in []*big.Int) []*big.Int {
-	if len(in) < p.Size {
-		rest := p.Size - len(in)
-		//fmt.Printf("\npolysize %v, filled up to next power of two 2^%v. Add %v dummy values", len(polynomial), bit, rest)
-		in = append(in, ArrayOfBigZeros(rest)...)
-	}
-	return in
 }
 
 func (p *FFT_PrecomputedParas) _dfft(bigAlphas_SS, bigAlphas, data []*big.Int, in chan []*big.Int) {

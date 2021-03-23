@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/mottla/go-R1CS-Compiler/utils"
-	"math"
 	"math/big"
 )
 
@@ -15,9 +14,9 @@ type R1CS struct {
 	//splitMap maps each variable (which is split into its bit represants at some point in the code) onto the positions
 	//of the its bits in the indexMap
 	splitmap map[string][]int
-	L        [][]*big.Int
-	R        [][]*big.Int
-	O        [][]*big.Int
+	L        []utils.Poly
+	R        []utils.Poly
+	O        []utils.Poly
 }
 type R1CSSparse struct {
 	indexMap                     map[string]int
@@ -37,9 +36,9 @@ type R1CSsPARSETransposed struct {
 type R1CSTransposed struct {
 	indexMap                     map[string]int
 	WitnessLength, NumberOfGates int
-	L                            [][]*big.Int
-	R                            [][]*big.Int
-	O                            [][]*big.Int
+	L                            []utils.Poly
+	R                            []utils.Poly
+	O                            []utils.Poly
 }
 
 func (er1cs *R1CSSparse) TransposeSparse() (transposed *R1CSsPARSETransposed) {
@@ -55,21 +54,6 @@ func (er1cs *R1CSSparse) TransposeSparse() (transposed *R1CSsPARSETransposed) {
 	return
 }
 
-func maximum(a ...int) int {
-	if len(a) == 0 {
-		return math.MinInt64
-	}
-	return max(a[0], maximum(a[1:]...))
-
-}
-func max(a, b int) int {
-
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func (er1cs *R1CS) Transpose() (transposed *R1CSTransposed) {
 	transposed = &R1CSTransposed{}
 	transposed.indexMap = er1cs.indexMap
@@ -81,113 +65,79 @@ func (er1cs *R1CS) Transpose() (transposed *R1CSTransposed) {
 	return
 }
 
-//OLD
-func (er1cs *R1CSTransposed) R1CSToEAP() (lPoly, rPoly, oPoly [][]*big.Int) {
+func (er1cs *R1CSTransposed) R1CSToEAP_FFT(fft *utils.FFT_PrecomputedParas, pf *utils.PolynomialField, tau *big.Int) (Ai_Tau, Ri_Tau, Oi_Tau []*big.Int) {
 
 	lT := er1cs.L
 	rT := er1cs.R
 	oT := er1cs.O
-	utils.Field.PolynomialField.PrecomputeLagrange(er1cs.NumberOfGates)
-	for i := 0; i < er1cs.WitnessLength; i++ {
-		lPoly = append(lPoly, utils.Field.PolynomialField.LagrangeInterpolation(lT[i]))
 
-		rPoly = append(rPoly, utils.Field.PolynomialField.LagrangeInterpolation(rT[i]))
-
-		oPoly = append(oPoly, utils.Field.PolynomialField.LagrangeInterpolation(oT[i]))
-	}
-	return
-}
-func (er1cs *R1CSTransposed) R1CSToEAP_FFT_2(fft *utils.FFT_PrecomputedParas) (lPoly, rPoly, oPoly [][]*big.Int) {
-
-	lT := er1cs.L
-	rT := er1cs.R
-	oT := er1cs.O
-	utils.Field.PolynomialField.PrecomputeLagrangeFFT(fft)
-
-	for i := 0; i < er1cs.WitnessLength; i++ {
-		lPoly = append(lPoly, utils.Field.PolynomialField.LagrangeInterpolation_RootOfUnity(fft, fft.ExtendPolyToDomain(lT[i])))
-
-		rPoly = append(rPoly, utils.Field.PolynomialField.LagrangeInterpolation_RootOfUnity(fft, fft.ExtendPolyToDomain(rT[i])))
-
-		oPoly = append(oPoly, utils.Field.PolynomialField.LagrangeInterpolation_RootOfUnity(fft, fft.ExtendPolyToDomain(oT[i])))
-	}
-	return
-}
-
-//note that invDFFT and DFFT increase the size of the input array to the next power of two
-func (er1cs *R1CSTransposed) R1CSToEAP_FFT(fft *utils.FFT_PrecomputedParas) (lPoly, rPoly, oPoly [][]*big.Int) {
-
-	pf := utils.Field.PolynomialField
-
-	lT := er1cs.L
-	rT := er1cs.R
-	oT := er1cs.O
 	gates := fft.Size
-	lagreangeBases := make([][]*big.Int, gates)
-	invGateNumber := pf.F.Inverse(new(big.Int).SetInt64(int64(gates)))
-	lambda := pf.MulScalar(fft.Domain, invGateNumber)
-	rho := fft.RootOfUnitys[gates>>1]
-	var rest []*big.Int
-	lagreangeBases[0], rest = pf.Div(lambda, []*big.Int{rho, bigOne})
-	if !utils.IsZeroArray(rest) {
-		panic("no rest")
-	}
+	lagreangeBasesAtTau := make(utils.Poly, er1cs.NumberOfGates)
+	zeta := pf.EvalPoly(fft.Domain, tau)
 
-	for i := 1; i < gates; i++ {
-		lambda = pf.MulScalar(lambda, fft.RootOfUnity)
+	lambda := pf.F.Div(zeta, new(big.Int).SetInt64(int64(gates)))
+	rho := fft.RootOfUnitys[0]
+
+	lagreangeBasesAtTau[0] = pf.F.Div(lambda, pf.F.Sub(tau, rho))
+
+	for i := 1; i < er1cs.NumberOfGates; i++ {
+		lambda = pf.F.Mul(lambda, fft.RootOfUnity)
 		index := ((gates >> 1) + i) % gates
-		//inv,_ := pf.Div([]*big.Int{bigOne},[]*big.Int{fft.RootOfUnitys[ index], bigOne})
-		lagreangeBases[i], _ = pf.Div(lambda, []*big.Int{fft.RootOfUnitys[index], bigOne})
+		//inv,_ := pf.Div(utils.Poly{bigOne},utils.Poly{fft.RootOfUnitys[ index], bigOne})
+		lagreangeBasesAtTau[i] = pf.F.Div(lambda, pf.F.Add(fft.RootOfUnitys[index], tau))
 	}
-
-	//test the lagrange polys.
-	//for i := 0; i < gates; i++ {
-	//	for j := 0; j < gates; j++ {
-	//		v := pf.EvalPoly(lagreangeBases[i],fft.RootOfUnitys[j] )
-	//		exp := int64(utils.Equal(i,j))
-	//		if v.Cmp(new(big.Int).SetInt64(exp) ) != 0{
-	//			fmt.Printf("\n error got %v should be %v. at %v,%v",v,exp,i,j)
-	//		}else{
-	//			fmt.Printf("\n correct at %v,%v",i,j)
-	//		}
-	//	}
-	//}
+	Ai_Tau, Ri_Tau, Oi_Tau = make([]*big.Int, er1cs.WitnessLength), make([]*big.Int, er1cs.WitnessLength), make([]*big.Int, er1cs.WitnessLength)
 
 	for i := 0; i < er1cs.WitnessLength; i++ {
+		Ai_Tau[i] = pf.F.ScalarProduct(lT[i], lagreangeBasesAtTau)
 
-		lPoly = append(lPoly, pf.AddPolynomials(pf.LinearCombine(lagreangeBases, lT[i])))
+		Ri_Tau[i] = pf.F.ScalarProduct(rT[i], lagreangeBasesAtTau)
 
-		rPoly = append(rPoly, pf.AddPolynomials(pf.LinearCombine(lagreangeBases, rT[i])))
-
-		oPoly = append(oPoly, pf.AddPolynomials(pf.LinearCombine(lagreangeBases, oT[i])))
+		Oi_Tau[i] = pf.F.ScalarProduct(oT[i], lagreangeBasesAtTau)
 	}
 	return
 }
 
-// R1CSToQAP converts the R1CS* values to the EAP values
-//it uses Lagrange interpolation to to fit a polynomial through each slice. The x coordinate
-//is simply a linear increment starting at 1
-//within this process, the polynomial is evaluated at position 0
-//so an alpha/beta/gamma value is the polynomial evaluated at 0
-// the domain polynomial therefor is (-1+x)(-2+x)...(-n+x)
-func (er1cs *R1CSsPARSETransposed) R1CSToEAPSparse() (lPoly, rPoly, oPoly []*utils.AvlTree) {
-
-	lT := er1cs.L
-	rT := er1cs.R
-	oT := er1cs.O
-	for i := 0; i < len(lT); i++ {
-		lPoly = append(lPoly, utils.Field.ArithmeticField.InterpolateSparseArray(lT[i], er1cs.WitnessLength))
-
-		rPoly = append(rPoly, utils.Field.ArithmeticField.InterpolateSparseArray(rT[i], er1cs.WitnessLength))
-
-		oPoly = append(oPoly, utils.Field.ArithmeticField.InterpolateSparseArray(oT[i], er1cs.WitnessLength))
-	}
-	return
-}
+////note that invDFFT and DFFT increase the size of the input array to the next power of two
+//func (er1cs *R1CSTransposed) R1CSToEAP_FFT(fft *utils.FFT_PrecomputedParas) (lPoly, rPoly, oPoly []utils.Poly) {
+//
+//	pf := utils.Field.PolynomialField
+//
+//	lT := er1cs.L
+//	rT := er1cs.R
+//	oT := er1cs.O
+//	gates := fft.Size
+//	lagreangeBases := make([]utils.Poly, gates)
+//	invGateNumber := pf.F.Inverse(new(big.Int).SetInt64(int64(gates)))
+//	lambda := pf.MulScalar(fft.Domain, invGateNumber)
+//	rho := fft.RootOfUnitys[gates>>1]
+//	var rest utils.Poly
+//	lagreangeBases[0], rest = pf.Div(lambda, utils.Poly{rho, bigOne})
+//	if !utils.IsZeroArray(rest) {
+//		panic("no rest")
+//	}
+//
+//	for i := 1; i < gates; i++ {
+//		lambda = pf.MulScalar(lambda, fft.RootOfUnity)
+//		index := ((gates >> 1) + i) % gates
+//		//inv,_ := pf.Div(utils.Poly{bigOne},utils.Poly{fft.RootOfUnitys[ index], bigOne})
+//		lagreangeBases[i], _ = pf.Div(lambda, utils.Poly{fft.RootOfUnitys[index], bigOne})
+//	}
+//
+//	for i := 0; i < er1cs.WitnessLength; i++ {
+//
+//		lPoly = append(lPoly, pf.AddPolynomials(pf.LinearCombine(lagreangeBases, lT[i])))
+//
+//		rPoly = append(rPoly, pf.AddPolynomials(pf.LinearCombine(lagreangeBases, rT[i])))
+//
+//		oPoly = append(oPoly, pf.AddPolynomials(pf.LinearCombine(lagreangeBases, oT[i])))
+//	}
+//	return
+//}
 
 //Calculates the witness (program trace) given some extended rank 1 constraint system
 //asserts that R1CS has been computed and is stored in the program p memory calling this function
-func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness []*big.Int, err error) {
+func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness utils.Poly, err error) {
 
 	witness = utils.ArrayOfBigZeros(len(r1cs.indexMap))
 	set := make([]bool, len(witness))
@@ -304,146 +254,6 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness []*big.Int, err 
 			setWitness(outUnknowns[0], result)
 			continue
 		}
-		//we computed the unkown and now check if the ER1C is satisfied
-		leftKnowns, leftUnknowns = getKnownsAndUnknowns(gatesLeftInputs)
-		rightKnowns, rightUnknowns = getKnownsAndUnknowns(gatesRightInputs)
-		outKnowns, outUnknowns = getKnownsAndUnknowns(gatesOutputs)
-
-		if len(leftUnknowns)+len(rightUnknowns)+len(outUnknowns) != 0 {
-			return nil, errors.New(fmt.Sprintf("at gate %v some unknowns remain", i))
-
-		}
-		//now check if the gate is satisfiable
-		result := utils.Field.ArithmeticField.Mul(sum(rightKnowns), sum(leftKnowns))
-		if result.Cmp(sum(outKnowns)) != 0 {
-			return nil, errors.New(fmt.Sprintf("at equality gate %v there is unequality. %v != %v .We cannot process", i, result.String(), sum(outKnowns).String()))
-		}
-
-	}
-
-	return
-}
-
-//Calculates the witness (program trace) given some extended rank 1 constraint system
-//asserts that R1CS has been computed and is stored in the program p memory calling this function
-func CalculateTrace_sparse(r1cs *R1CSSparse, input []InputArgument) (witness []*big.Int, err error) {
-
-	witness = utils.ArrayOfBigZeros(len(r1cs.indexMap))
-	set := make([]bool, len(witness))
-	witness[0] = big.NewInt(int64(1))
-	set[0] = true
-
-	for _, v := range input {
-		witness[r1cs.indexMap[v.identifier]] = v.value
-		set[r1cs.indexMap[v.identifier]] = true
-	}
-
-	//inverseSplitmap maps each bit index onto (bitposition,positionOfFather)
-	inverseSplitmap := make(map[int][]int)
-	// all inputs, which get split into bits at some point, are now added to the witnesstrace
-	for k, v := range r1cs.splitmap {
-		if set[r1cs.indexMap[k]] {
-			for bitPos, zGateIndex := range v {
-				witness[zGateIndex] = big.NewInt(int64(witness[r1cs.indexMap[k]].Bit(bitPos)))
-				set[zGateIndex] = true
-			}
-		}
-		for bitpos, zGateIndex := range v {
-			inverseSplitmap[zGateIndex] = []int{bitpos, r1cs.indexMap[k]}
-		}
-
-	}
-
-	zero := big.NewInt(int64(0))
-
-	getKnownsAndUnknowns := func(array *utils.AvlTree) (knowns *utils.AvlTree, unknownsAtIndices []uint) {
-		knowns = utils.NewAvlTree()
-		for val := range array.ChannelNodes(true) {
-			if !set[val.Key] {
-				if bitPosAndFather, exists := inverseSplitmap[int(val.Key)]; exists {
-					bit := big.NewInt(int64(witness[bitPosAndFather[1]].Bit(int(bitPosAndFather[0]))))
-					witness[val.Key] = bit
-					set[val.Key] = true
-					knowns.Insert(val.Key, bit)
-					continue
-				}
-				unknownsAtIndices = append(unknownsAtIndices, val.Key)
-			} else {
-				knowns.Insert(val.Key, val.Value)
-			}
-		}
-		return
-	}
-
-	sum := func(array *utils.AvlTree) *big.Int {
-		return utils.Field.ArithmeticField.SparseScalarProduct(array, witness)
-	}
-
-	for i := 0; i < len(r1cs.L); i++ {
-		gatesLeftInputs := r1cs.L[i]
-		gatesRightInputs := r1cs.R[i]
-		gatesOutputs := r1cs.O[i]
-
-		leftKnowns, leftUnknowns := getKnownsAndUnknowns(gatesLeftInputs)
-		rightKnowns, rightUnknowns := getKnownsAndUnknowns(gatesRightInputs)
-
-		outKnowns, outUnknowns := getKnownsAndUnknowns(gatesOutputs)
-
-		if len(leftUnknowns)+len(rightUnknowns)+len(outUnknowns) > 1 {
-			return nil, errors.New(fmt.Sprintf("at gate %v:computing more then one unknown in Gate assignment is not possible", i))
-		}
-
-		// (a*x + b + c..) (d+e+..) + (G^(k+v..)) = (F+g+..)   we solve for x
-		if len(leftUnknowns) == 1 {
-			sumright := sum(rightKnowns)
-			if sumright.Cmp(zero) == 0 {
-				fmt.Println(r1cs.L[i])
-				fmt.Println(r1cs.R[i])
-				fmt.Println(r1cs.O[i])
-
-				return nil, errors.New(fmt.Sprintf("at gate %v:the summation of R inputs cannot be 0 if the unknown is in Lexer", i))
-			}
-			result := utils.Field.ArithmeticField.Div(sum(outKnowns), sumright)
-			result = utils.Field.ArithmeticField.Sub(result, sum(leftKnowns))
-			v, e := gatesLeftInputs.Get(leftUnknowns[0])
-			if e != nil {
-				return nil, e
-			}
-			result = utils.Field.ArithmeticField.Div(result, v) //divide by a
-			set[leftUnknowns[0]] = true
-			witness[leftUnknowns[0]] = result
-		}
-		// (a + b + c..) (d+e*x+..) + (G^(k+v..)) = (F+g+..)   we solve for x
-		if len(rightUnknowns) == 1 {
-			sumleft := sum(leftKnowns)
-			if sumleft.Cmp(zero) == 0 {
-				return nil, errors.New(fmt.Sprintf("at gate %v:the summation of Lexer inputs cannot be 0 if the unknown is in R", i))
-			}
-			result := utils.Field.ArithmeticField.Div(sum(outKnowns), sumleft)
-			result = utils.Field.ArithmeticField.Sub(result, sum(rightKnowns))
-			v, e := gatesRightInputs.Get(rightUnknowns[0])
-			if e != nil {
-				return nil, e
-			}
-			result = utils.Field.ArithmeticField.Div(result, v) //divide by a
-			set[rightUnknowns[0]] = true
-			witness[rightUnknowns[0]] = result
-		}
-
-		// (a + b + c..) (d+e+..) + (G^(k+v..)) = (F+x*g+..)   we solve for x
-		if len(outUnknowns) == 1 {
-
-			result := utils.Field.ArithmeticField.Mul(sum(rightKnowns), sum(leftKnowns))
-			result = utils.Field.ArithmeticField.Sub(result, sum(outKnowns))
-			v, e := gatesOutputs.Get(outUnknowns[0])
-			if e != nil {
-				return nil, e
-			}
-			result = utils.Field.ArithmeticField.Div(result, v) //divide by a
-			set[outUnknowns[0]] = true
-			witness[outUnknowns[0]] = result
-		}
-
 		//we computed the unkown and now check if the ER1C is satisfied
 		leftKnowns, leftUnknowns = getKnownsAndUnknowns(gatesLeftInputs)
 		rightKnowns, rightUnknowns = getKnownsAndUnknowns(gatesRightInputs)

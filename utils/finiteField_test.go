@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"fmt"
+	bn256 "github.com/mottla/go-R1CS-Compiler/pairing"
 	"math/big"
 	"testing"
 
@@ -47,4 +49,15 @@ func TestFq1(t *testing.T) {
 
 	res = fq1.Square(iToBig(5))
 	assert.Equal(t, iToBig(4), res)
+}
+
+func TestAdicityBig(t *testing.T) {
+	r := new(big.Int).Set(bn256.Order)
+	//r := new(big.Int).SetInt64(929)
+	r = r.Sub(r, bigOne)
+	fmt.Println(r)
+	fmt.Printf("%b", r)
+	fmt.Println()
+	fmt.Println(AdicityBig(r))
+
 }

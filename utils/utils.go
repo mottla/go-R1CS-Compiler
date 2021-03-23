@@ -2,6 +2,7 @@ package utils
 
 import (
 	bn256 "github.com/mottla/go-R1CS-Compiler/pairing"
+	"math"
 	"math/big"
 )
 
@@ -12,10 +13,10 @@ var bigOne = big.NewInt(int64(1))
 var Field = PrepareFields(bn256.Order)
 
 // Transpose transposes the *big.Int matrix
-func Transpose(matrix [][]*big.Int) [][]*big.Int {
-	r := make([][]*big.Int, len(matrix[0]))
+func Transpose(matrix []Poly) []Poly {
+	r := make([]Poly, len(matrix[0]))
 	for x, _ := range r {
-		r[x] = make([]*big.Int, len(matrix))
+		r[x] = make(Poly, len(matrix))
 	}
 	for y, s := range matrix {
 		for x, e := range s {
@@ -26,9 +27,9 @@ func Transpose(matrix [][]*big.Int) [][]*big.Int {
 }
 
 // ArrayOfBigZeros creates a *big.Int array with n elements to zero
-func ArrayOfBigZeros(num int) []*big.Int {
+func ArrayOfBigZeros(num int) Poly {
 
-	var r = make([]*big.Int, num, num)
+	var r = make(Poly, num, num)
 	for i := 0; i < num; i++ {
 		r[i] = bigZero
 	}
@@ -95,8 +96,52 @@ func NextPowerOfTwo(n int) int {
 	}
 	return p
 }
+func Addicity(n int) int {
+	p := int(1)
+	ad := 0
+	for p&n == 0 {
+		n = n >> 1
+		ad += 1
+	}
+	return ad
+}
 
 //euclid returns q,r s.t. a=bq+r
 func euclid(a, b uint) (q, r uint) {
 	return a / b, a % b
+}
+func maximum(a ...int) int {
+	if len(a) == 0 {
+		return math.MinInt64
+	}
+	return max(a[0], maximum(a[1:]...))
+
+}
+func max(a, b int) int {
+
+	if a > b {
+		return a
+	}
+	return b
+}
+func abs(i int) int {
+	if i < 0 {
+		return -i
+	}
+	return i
+}
+func ExtendArrayWithZeros(in []*big.Int, desiredLength int) []*big.Int {
+	if len(in) < desiredLength {
+		rest := desiredLength - len(in)
+		//fmt.Printf("\npolysize %v, filled up to next power of two 2^%v. Add %v dummy values", len(polynomial), bit, rest)
+		in = append(in, ArrayOfBigZeros(rest)...)
+	}
+	return in
+}
+
+//returns the absolute value of a signed int and a flag telling if the input was positive or not
+//this implementation is awesome and fast (see Henry S Warren, Hackers's Delight)
+func Abs(n int) (val int, positive bool) {
+	y := n >> 63
+	return (n ^ y) - y, y == 0
 }
