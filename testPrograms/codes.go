@@ -39,7 +39,7 @@ var sudoku = func() []*big.Int {
 
 var TestPrograms = []TraceCorrectnessTest{
 	{
-		Skip: true,
+		Skip: false,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(7)), big.NewInt(int64(2))},
 			Result: big.NewInt(int64(49)),
@@ -49,13 +49,13 @@ var TestPrograms = []TraceCorrectnessTest{
 	public{
 	x
 	}
-		var c = y * y * 7
-		return x * x * (c+5)
+		
+		return x*x*0xaaBBc434
 	}		
 `,
 	},
 	{
-		Skip: false,
+		Skip: true,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(7)), big.NewInt(int64(11))},
 			Result: big.NewInt(int64(1729500084900343)),
@@ -93,7 +93,7 @@ var TestPrograms = []TraceCorrectnessTest{
 	}`,
 	},
 	{
-		Skip: false,
+		Skip: true,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(3))},
 		}},
@@ -113,7 +113,7 @@ func fubunaci(a){
 }
 `},
 	{
-		Skip: false,
+		Skip: true,
 		IO: []InOut{{
 			Inputs: sudoku(),
 		}},

@@ -273,7 +273,7 @@ func (circ *function) contextCheck(constraint *Constraint) {
 		circ.contextCheck(constraint.Inputs[i])
 	}
 
-	if constraint.Output.Type&(NumberToken|Operator) != 0 {
+	if constraint.Output.Type&(DecimalNumberToken|Operator) != 0 {
 		return
 	}
 
@@ -391,57 +391,63 @@ func (circ *function) restore(keys []string) {
 	circ.constraintMap = tmp
 }
 
-func (currentCircuit *function) checkStaticCondition(c *Constraint) (isSatisfied bool) {
-	//unelegant...
+func (currentCircuit *function) checkStaticCondition(c *Constraint) (isStatic, isSatisfied bool) {
+	//else condition
+	if len(c.Inputs) == 0 {
+		return true, true
+	}
 
 	var factorsA, factorsB factors
 	var A, B *big.Int
 
 	factorsA, _, _ = currentCircuit.compile(c.Inputs[1], newGateContainer())
-	factorsB, _, _ = currentCircuit.compile(c.Inputs[2], newGateContainer())
+	if !factorsA.isSingleNumber() {
+		return false, false
 
+	}
+	factorsB, _, _ = currentCircuit.compile(c.Inputs[2], newGateContainer())
+	if !factorsB.isSingleNumber() {
+		return false, false
+	}
 	A = factorsA[0].multiplicative
 	B = factorsB[0].multiplicative
 
-	if !factorsA.isSingleNumber() || !factorsB.isSingleNumber() {
-		panic("no dynamic looping supported")
-	}
 	switch c.Inputs[0].Output.Identifier {
 	case "==":
 		if A.Cmp(B) != 0 {
-			return false
+			return true, false
 		}
 		break
 	case "!=":
 		if A.Cmp(B) == 0 {
-			return false
+			return true, false
 		}
 		break
 	case ">":
 		if A.Cmp(B) != 1 {
-			return false
+			return true, false
 		}
 		break
 	case ">=":
 		if A.Cmp(B) == -1 {
-			return false
+			return true, false
 		}
 		break
 	case "<":
 		if A.Cmp(B) != -1 {
-			return false
+			return true, false
 		}
 		break
 	case "<=":
 		if A.Cmp(B) == 1 {
-			return false
+			return true, false
 		}
 		break
 	default:
 		panic(c.Inputs[0].Output.String())
 
 	}
-	return true
+	return true, true
 }
 
 func newWatchstack() *watchstack {
@@ -467,6 +473,19 @@ func (w *watchstack) len() int {
 func (w *watchstack) add(c *Constraint) {
 	w.data = append(w.data, c)
 
+}
+func (w *watchstack) PopFirst() (bool, *Constraint) {
+	if len(w.data) == 1 {
+		f := w.data[0]
+		w.data = nil
+		return true, f
+	}
+	if w.data == nil || len(w.data) == 0 {
+		return false, nil
+	}
+	f := w.data[0]
+	w.data = w.data[1:]
+	return true, f
 }
 func (w *watchstack) addPrimitiveReturn(tok Token) {
 	w.add(&Constraint{

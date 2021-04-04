@@ -160,7 +160,7 @@ func (p *Parser) statementMode(tokens []Token) {
 				var arrayDimensions = make([]int64, len(v.Inputs))
 				var err error
 				for i, in := range v.Inputs {
-					if in.Output.Type != NumberToken {
+					if in.Output.Type != DecimalNumberToken {
 						p.error("Invalid array declaration in function header, got %v, expect static size", v.Inputs[0])
 					}
 					arrayDimensions[i], err = strconv.ParseInt(in.Output.Identifier, 10, 64)
@@ -445,7 +445,7 @@ func (p *Parser) parseExpression(stack []Token, constraint *Constraint) {
 
 	//can only be IN | Number
 	if len(stack) == 1 {
-		if stack[0].Type&(NumberToken|IDENTIFIER_VARIABLE) != 0 {
+		if stack[0].Type&(DecimalNumberToken|IDENTIFIER_VARIABLE) != 0 {
 			constraint.Inputs = append(constraint.Inputs, &Constraint{Output: stack[0]})
 			return
 		}

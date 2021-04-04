@@ -6,6 +6,7 @@ package Circuitcompiler
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"unicode/utf8"
 )
@@ -40,7 +41,8 @@ func (t *Tokens) next() (r Token) {
 	return r
 }
 
-var numberTokens = "0123456789"
+var decimalNumberTokens = "0123456789"
+var hexTokens = "0123456789abcdefABCDEF"
 var syntaxTokens = "():,;\n{}[]"
 var operationTokens = "=-+*/&|><!"
 var commentToken = '#'
@@ -93,7 +95,7 @@ var Operator = BinaryComperatorToken | ArithmeticOperatorToken | BooleanOperator
 var IN = IDENTIFIER_VARIABLE | ARGUMENT | VARIABLE_DECLARE | UNASIGNEDVAR
 
 const (
-	NumberToken TokenType = 1 << iota
+	DecimalNumberToken TokenType = 1 << iota
 	SyntaxToken
 	CommentToken
 	AssignmentOperatorToken
@@ -148,7 +150,7 @@ func (ch TokenType) String() string {
 		return "For ends"
 	case SyntaxToken:
 		return "syntaxToken"
-	case NumberToken:
+	case DecimalNumberToken:
 		return "numberToken"
 	case FUNCTION_DEFINE:
 		return "def"
@@ -366,20 +368,37 @@ func isWhitespace(ch rune) bool {
 func isLetter(ch rune) bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
 }
-func isDigit(ch rune) bool {
+func isDecimalDigit(ch rune) bool {
 	return (ch >= '0' && ch <= '9')
 }
 
-func NumberState(l *Lexer) StateFunc {
-	l.Take(numberTokens)
-	l.Emit(NumberToken)
+func DecimalNumberState(l *Lexer) StateFunc {
+	l.Take(decimalNumberTokens)
+	l.Emit(DecimalNumberToken)
+	return ProbablyWhitespaceState(l)
+}
+func HexNumberState(l *Lexer) StateFunc {
+	l.Take(hexTokens)
+	c := l.Current()
+	v, b := new(big.Int).SetString(c[2:], 16)
+	if !b {
+		panic("not possible")
+	}
+	tok := Token{
+		Type:       DecimalNumberToken,
+		Identifier: v.String(),
+	}
+	l.tokens <- tok
+	l.start = l.position
+	l.rewind.clear()
+
 	return ProbablyWhitespaceState(l)
 }
 
 func readIdent(l *Lexer) {
 
 	r := l.Next()
-	for isLetter(r) || isDigit(r) || r == '_' {
+	for isLetter(r) || isDecimalDigit(r) || r == '_' {
 		r = l.Next()
 	}
 	l.Rewind()
@@ -393,11 +412,16 @@ func readCommentLine(l *Lexer) {
 }
 
 func IdentState(l *Lexer) StateFunc {
+	if l.PeekTwo() == "0x" {
+		return HexNumberState
+	}
+
 	peek := l.Peek()
 
-	if isDigit(peek) {
-		return NumberState
+	if isDecimalDigit(peek) {
+		return DecimalNumberState
 	}
+
 	if strings.ContainsRune(syntaxTokens, peek) {
 		l.Next()
 		l.Emit(SyntaxToken)

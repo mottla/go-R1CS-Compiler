@@ -59,6 +59,7 @@ func (fq Fq) One() *big.Int {
 
 func (fq Fq) StringToFieldElement(a string) (v *big.Int, s bool) {
 	v, s = new(big.Int).SetString(a, 10)
+
 	return v.Mod(v, fq.Q), s
 }
 

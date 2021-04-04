@@ -16,16 +16,16 @@ type PolynomialField struct {
 
 type Poly []*big.Int
 
-func (p Poly) String() string {
-	str := "["
-	for _, v := range p {
-
-		str += v.String()[0:7]
-		str += ","
-	}
-	str += "]"
-	return str
-}
+//func (p Poly) String() string {
+//	str := "["
+//	for _, v := range p {
+//
+//		str += v.String()[0:7]
+//		str += ","
+//	}
+//	str += "]"
+//	return str
+//}
 
 // NewPolynomialField creates a new PolynomialField with the given FiniteField
 

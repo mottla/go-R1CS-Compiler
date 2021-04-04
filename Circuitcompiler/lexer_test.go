@@ -2,9 +2,22 @@ package Circuitcompiler
 
 import (
 	"fmt"
+	"math/big"
 	"testing"
 )
 
+func TestHexNumberState(t *testing.T) {
+	v, b := new(big.Int).SetString("ABB", 16)
+	if !b {
+		panic("asdf")
+	}
+	println(v)
+	v, b = new(big.Int).SetString("AbB", 16)
+	if !b {
+		panic("asdf")
+	}
+	println(v.String())
+}
 func Test_LexerError2(t *testing.T) {
 	//code2 := `def main(a):
 	//	for(a = 3; a<3; a+=1){

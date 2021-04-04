@@ -57,7 +57,7 @@ func (g *gateContainer) contains(tok string) bool {
 	return ex
 }
 
-func (g *gateContainer) Add(gate *Gate) {
+func (g *gateContainer) Add(gate *Gate) (id string) {
 
 	if !g.contains(gate.ID()) {
 		g.computedFactors[gate.ID()] = true
@@ -66,5 +66,5 @@ func (g *gateContainer) Add(gate *Gate) {
 		//fmt.Println("saved reuse of "+gate.String())
 	}
 
-	return
+	return gate.ID()
 }

@@ -9,7 +9,7 @@ func StartServer(addr *string) *Hub {
 	hub := newHub()
 	go hub.run()
 
-	http.Handle("/", http.FileServer(http.Dir("./Circuitcompiler/web_g6")))
+	http.Handle("/", http.FileServer(http.Dir("./Circuitcompiler/web_vivagraph")))
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		serveWs(hub, w, r)

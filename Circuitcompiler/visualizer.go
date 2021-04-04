@@ -6,7 +6,7 @@ import (
 
 func start(hub *Hub) {
 
-	code := testPrograms.TestPrograms[3]
+	code := testPrograms.TestPrograms[0]
 
 	program := Parse(code.Code, true)
 	container := program.Execute()
@@ -32,7 +32,7 @@ func start(hub *Hub) {
 
 		for _, l := range g.leftIns {
 
-			if l.Typ.Type == NumberToken {
+			if l.Typ.Type == DecimalNumberToken {
 				res.ColorCha = append(res.ColorCha, colorChange{
 					Id:    g.Identifier,
 					Color: "#F6C3B7",
@@ -46,7 +46,7 @@ func start(hub *Hub) {
 			})
 		}
 		for _, l := range g.rightIns {
-			if l.Typ.Type == NumberToken {
+			if l.Typ.Type == DecimalNumberToken {
 				res.ColorCha = append(res.ColorCha, colorChange{
 					Id:    g.Identifier,
 					Color: "#BDEFDB",

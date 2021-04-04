@@ -93,8 +93,8 @@ function onLoad() {
     var graph = Viva.Graph.graph();
 
     var layout = Viva.Graph.Layout.forceDirected(graph, {
-        springLength: 20,
-        springCoeff: 0.0003,
+        springLength: 40,
+        springCoeff: 0.0001,
         dragCoeff: 0.09,
         gravity: -3,
         theta: 0.08
