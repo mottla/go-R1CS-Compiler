@@ -413,6 +413,8 @@ func readCommentLine(l *Lexer) {
 
 func IdentState(l *Lexer) StateFunc {
 	if l.PeekTwo() == "0x" {
+		l.Next()
+		l.Next()
 		return HexNumberState
 	}
 

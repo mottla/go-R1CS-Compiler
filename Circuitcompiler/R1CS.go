@@ -135,56 +135,41 @@ func (er1cs *R1CSTransposed) R1CSToEAP_FFT(fft *utils.FFT_PrecomputedParas, pf *
 //	return
 //}
 
-//Calculates the witness (program trace) given some extended rank 1 constraint system
-//asserts that R1CS has been computed and is stored in the program p memory calling this function
 func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness utils.Poly, err error) {
 
 	witness = utils.ArrayOfBigZeros(len(r1cs.indexMap))
 	set := make([]bool, len(witness))
 
+	invIndexMap := make(map[int]string)
+	for k, v := range r1cs.indexMap {
+		invIndexMap[v] = k
+	}
+
 	var setWitness = func(index int, value *big.Int) {
 		witness[index] = value
+		set[index] = true
+		if bitPositions, ex := r1cs.splitmap[invIndexMap[index]]; ex {
+			for i, bit := range bitPositions {
+				witness[bit] = big.NewInt(int64(value.Bit(i)))
+				set[bit] = true
+			}
+
+		}
 	}
 	setWitness(0, big.NewInt(int64(1)))
 
-	set[0] = true
-
 	for _, v := range input {
 		setWitness(r1cs.indexMap[v.identifier], v.value)
-		set[r1cs.indexMap[v.identifier]] = true
-	}
-
-	//inverseSplitmap maps each bit index onto (bitposition,positionOfFather)
-	inverseSplitmap := make(map[int][]int)
-	// all inputs, which get split into bits at some point, are now added to the witnesstrace
-	for k, v := range r1cs.splitmap {
-		if set[r1cs.indexMap[k]] {
-			for bitPos, zGateIndex := range v {
-				setWitness(zGateIndex, big.NewInt(int64(witness[r1cs.indexMap[k]].Bit(bitPos))))
-				set[zGateIndex] = true
-			}
-		}
-		for bitpos, zGateIndex := range v {
-			inverseSplitmap[zGateIndex] = []int{bitpos, r1cs.indexMap[k]}
-		}
-
 	}
 
 	zero := big.NewInt(int64(0))
 
 	getKnownsAndUnknowns := func(array []*big.Int) (knowns []*big.Int, unknownsAtIndices []int) {
+
 		knowns = utils.ArrayOfBigZeros(len(array))
 		for j, val := range array {
-
 			if val.Cmp(zero) != 0 {
 				if !set[j] {
-					if bitPosAndFather, exists := inverseSplitmap[j]; exists {
-						bit := big.NewInt(int64(witness[bitPosAndFather[1]].Bit(int(bitPosAndFather[0]))))
-						setWitness(j, bit)
-						set[j] = true
-						knowns[j] = bit
-						continue
-					}
 					unknownsAtIndices = append(unknownsAtIndices, j)
 				} else {
 					knowns[j] = val
@@ -226,11 +211,10 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness utils.Poly, err 
 			result := utils.Field.ArithmeticField.Div(sum(outKnowns), sumright)
 			result = utils.Field.ArithmeticField.Sub(result, sum(leftKnowns))
 			result = utils.Field.ArithmeticField.Div(result, gatesLeftInputs[leftUnknowns[0]]) //divide by a
-			set[leftUnknowns[0]] = true
 			setWitness(leftUnknowns[0], result)
 			continue
 		}
-		// (a + b + c..) (d+e*x+..) + (G^(k+v..)) = (F+g+..)   we solve for x
+		// (a + b + c..) (d+e*x+..)  = (F+g+..)   we solve for x
 		if len(rightUnknowns) == 1 {
 			sumleft := sum(leftKnowns)
 			if sumleft.Cmp(zero) == 0 {
@@ -239,7 +223,6 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness utils.Poly, err 
 			result := utils.Field.ArithmeticField.Div(sum(outKnowns), sumleft)
 			result = utils.Field.ArithmeticField.Sub(result, sum(rightKnowns))
 			result = utils.Field.ArithmeticField.Div(result, gatesRightInputs[rightUnknowns[0]]) //divide by a
-			set[rightUnknowns[0]] = true
 			setWitness(rightUnknowns[0], result)
 			continue
 		}
@@ -250,7 +233,6 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness utils.Poly, err 
 			result := utils.Field.ArithmeticField.Mul(sum(rightKnowns), sum(leftKnowns))
 			result = utils.Field.ArithmeticField.Sub(result, sum(outKnowns))
 			result = utils.Field.ArithmeticField.Div(result, gatesOutputs[outUnknowns[0]]) //divide by a
-			set[outUnknowns[0]] = true
 			setWitness(outUnknowns[0], result)
 			continue
 		}

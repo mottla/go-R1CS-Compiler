@@ -24,7 +24,7 @@ func (g *gateContainer) completeFunction(f factors) {
 		return
 	}
 	//if the function {..return x*1} , we dont introduce a new gate, as knowledge proof of a multiplication with 1 is trivial and not necessary
-	if len(f) == 1 && f[0].multiplicative.Cmp(bigOne) == 0 {
+	if len(f) == 1 && (f[0].multiplicative == nil || f[0].multiplicative.Cmp(bigOne) == 0) {
 		return
 	}
 	//the function returned but had a extracted constant

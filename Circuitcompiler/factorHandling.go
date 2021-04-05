@@ -45,7 +45,7 @@ func (f factor) SetMultiplicative(v *big.Int) (new factor) {
 func (f factor) Negate() (new factor) {
 	new = factor{
 		Typ:            f.Typ,
-		multiplicative: utils.Field.ArithmeticField.Inverse(f.multiplicative),
+		multiplicative: utils.Field.ArithmeticField.Neg(f.multiplicative),
 	}
 	return new
 }

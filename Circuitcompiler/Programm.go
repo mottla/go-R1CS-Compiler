@@ -82,7 +82,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			f, _, fkt := currentCircuit.compile(currentConstraint.Inputs[0], gateCollector)
 			return f, true, fkt
 		default:
-
+			panic("not possible")
 		}
 	case ARGUMENT:
 		fac := factor{Typ: Token{
@@ -128,27 +128,6 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		} else {
 			panic(fmt.Sprintf("array %s not declared", resolvedName))
 		}
-	//case IF:
-	//	//else
-	//	if len(currentConstraint.Inputs) == 0 {
-	//		return currentCircuit.compile(&Constraint{
-	//			Output: Token{
-	//				Type:       IF_FUNCTION_CALL,
-	//				Identifier: currentConstraint.Output.Identifier,
-	//			},
-	//		}, gateCollector)
-	//	}
-	//
-	//	if currentCircuit.checkStaticCondition(currentConstraint.Inputs[0]) {
-	//		return currentCircuit.compile(&Constraint{
-	//			Output: Token{
-	//				Type:       IF_FUNCTION_CALL,
-	//				Identifier: currentConstraint.Output.Identifier,
-	//			},
-	//		}, gateCollector)
-	//	} else {
-	//		return currentCircuit.compile(currentConstraint.Inputs[0], gateCollector)
-	//	}
 	case IF_FUNCTION_CALL:
 		var ifElseCircuits *function
 		var ex bool
@@ -162,20 +141,24 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			//the statement and return. the remaining if-else conditions are ignored
 			//else condition
 			if task.Inputs == nil || len(task.Inputs) == 0 {
-				return ifElseCircuits.compile(&Constraint{
+
+				fak, _, fkt := ifElseCircuits.compile(&Constraint{
 					Output: Token{
 						Type:       FUNCTION_CALL,
 						Identifier: task.Output.Identifier,
 					},
 				}, gateCollector)
+				return fak, true, fkt
 			}
 			if isStat, isSat := currentCircuit.checkStaticCondition(task.Inputs[0]); isSat && isStat {
-				return ifElseCircuits.compile(&Constraint{
+
+				fak, _, fkt := ifElseCircuits.compile(&Constraint{
 					Output: Token{
 						Type:       FUNCTION_CALL,
 						Identifier: task.Output.Identifier,
 					},
 				}, gateCollector)
+				return fak, true, fkt
 			} else if !isStat {
 
 				//the condition
@@ -215,6 +198,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			}
 
 		}
+		return nil, false, function{}
 	case FUNCTION_CALL:
 		switch currentConstraint.Output.Identifier {
 		case "BREAK":
@@ -284,7 +268,6 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				multiplicative: commonExtracted,
 			}
 			return factors{fres}, false, function{}
-
 		case "equal":
 			if len(currentConstraint.Inputs) != 2 {
 				panic("equality constraint requires 2 arguments")
@@ -360,20 +343,21 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 
 				for i := 0; i < len(bitsLeft); i++ {
 					// a xor b = c as arithmetic circuit (asserting that a,b \in {0,1}
-					// 2a*b = c - a - b - 1
+					// 2a*b = c + a + b - 1
 					one := factor{
 						Typ: Token{
 							Type: DecimalNumberToken,
 						},
 						multiplicative: new(big.Int).SetInt64(1),
 					}
+					var mGate = new(Gate)
+					mGate.gateType = multiplicationGate
 
-					mGate := &Gate{
-						gateType: multiplicationGate,
-						leftIns:  factors{bitsLeft[i].SetMultiplicative(new(big.Int).SetInt64(2))},
-						rightIns: factors{bitsRight[i]},
-						outIns:   factors{one.Negate(), bitsLeft[i].Negate(), bitsRight[i].Negate()},
-					}
+					mGate.leftIns = factors{bitsLeft[i].SetMultiplicative(new(big.Int).SetInt64(2))}
+					mGate.rightIns = factors{bitsRight[i]}
+					mGate.outIns = factors{one.Negate(), bitsLeft[i], bitsRight[i]}
+
+					print(mGate.Identifier)
 					xor := factor{
 						Typ: Token{Identifier: mGate.ID()},
 					}
@@ -383,7 +367,8 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				first := xorIDs[0]
 				for i := 1; i < len(xorIDs); i++ {
 					mGate := &Gate{
-						gateType: multiplicationGate,
+						Identifier: "",
+						gateType:   multiplicationGate,
 						leftIns: factors{factor{
 							Typ: Token{Identifier: first},
 						}},
@@ -400,9 +385,11 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 						Typ: tok,
 					}}
 					gateCollector.Add(mGate)
-					return mGate.outIns, false, *tok.primitiveReturnfunction()
 				}
-
+				tok := Token{
+					Type:       ARGUMENT,
+					Identifier: first}
+				return factors{factor{Typ: tok}}, false, *tok.primitiveReturnfunction()
 			case "!=":
 
 				break
@@ -498,6 +485,51 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	}
 	panic(currentConstraint)
 }
+func split(gateCollector *gateContainer, arg Token) (bits []factor) {
+	N := utils.Field.ArithmeticField.Q.BitLen() - 1
+	//we create N new R1CS elements Z_i. 			//
+	//each represents a bit of Z
+	//each Z_i is introduced by a constraint  (Z_i - 1 ) * Z_i = 0, to ensure its either 0 or 1
+	// Z_0 is the lsb
+
+	bitsScaled := make([]factor, N)
+	bits = make([]factor, N)
+	for i := 0; i < N; i++ {
+		nTok := Token{
+			Type: ARGUMENT,
+			//wirst the number, then the variable, to avoid collisions
+			Identifier: fmt.Sprintf("%v%v", i, arg.Identifier),
+		}
+		zeroOrOneGate := &Gate{
+			gateType:                zeroOrOneGate,
+			Identifier:              nTok.Identifier,
+			arithmeticRepresentatnt: arg,
+		}
+		gateCollector.Add(zeroOrOneGate)
+
+		bitsScaled[i] = factor{
+			Typ:            nTok,
+			multiplicative: new(big.Int).Lsh(bigOne, uint(i)),
+		}
+		bits[i] = factor{
+			Typ:            nTok,
+			multiplicative: bigOne,
+		}
+		// we need to add the bits during precompilations so we can access them like from an array
+		//	currentCircuit.constraintMap
+	}
+	//add the bits constraint \bits Z_i 2^i = Z to ensure that the Zi are the bit representation of Z
+
+	sumgate := &Gate{
+		gateType:                sumCheckGate,
+		arithmeticRepresentatnt: arg,
+		leftIns:                 bitsScaled,
+		noNewOutput:             true,
+	}
+	//cConstraint[indexMap[g.value.Identifier.Identifier]] = g.extractedConstants
+	gateCollector.Add(sumgate)
+	return bits
+}
 
 //constants, which have been excluded get added to the constraints at the end
 //for example: given a expression x*z*23, will only create a constraint where x*z is multiplied
@@ -564,8 +596,8 @@ func (p *Program) Execute() (orderedmGates *gateContainer) {
 	container := newGateContainer()
 	mainCircuit := p.GetMainCircuit()
 
-	for i := 0; i < mainCircuit.taskStack.len(); i++ {
-		f, returns, _ := mainCircuit.compile(mainCircuit.taskStack.data[i], container)
+	for _, taks := range mainCircuit.taskStack.data {
+		f, returns, _ := mainCircuit.compile(taks, container)
 		container.completeFunction(f)
 		if returns {
 			break
@@ -745,46 +777,4 @@ func (p *Program) GatesToR1CS(mGates []*Gate) (r1CS *R1CS) {
 	r1CS.NumberOfGates = len(r1CS.L)
 	r1CS.WitnessLength = len(indexMap)
 	return
-}
-
-func split(gateCollector *gateContainer, arg Token) (bits []factor) {
-	N := utils.Field.ArithmeticField.Q.BitLen()
-	//we create N new R1CS elements Z_i. 			//
-	//each represents a bit of Z
-	//each Z_i is introduced by a constraint  (Z_i - 1 ) * Z_i = 0, to ensure its either 0 or 1
-	// Z_0 is the lsb
-
-	bits = make([]factor, N)
-
-	for i := 0; i < N; i++ {
-		nTok := Token{
-			Type: ARGUMENT,
-			//wirst the number, then the variable, to avoid collisions
-			Identifier: fmt.Sprintf("%v%v", i, arg.Identifier),
-		}
-		zeroOrOneGate := &Gate{
-			gateType:                zeroOrOneGate,
-			Identifier:              nTok.Identifier,
-			arithmeticRepresentatnt: arg,
-		}
-		gateCollector.Add(zeroOrOneGate)
-
-		bits[i] = factor{
-			Typ:            nTok,
-			multiplicative: new(big.Int).Lsh(bigOne, uint(i)),
-		}
-		// we need to add the bits during precompilations so we can access them like from an array
-		//	currentCircuit.constraintMap
-	}
-	//add the bits constraint \bits Z_i 2^i = Z to ensure that the Zi are the bit representation of Z
-
-	sumgate := &Gate{
-		gateType:                sumCheckGate,
-		arithmeticRepresentatnt: arg,
-		leftIns:                 bits,
-		noNewOutput:             true,
-	}
-	//cConstraint[indexMap[g.value.Identifier.Identifier]] = g.extractedConstants
-	gateCollector.Add(sumgate)
-	return bits
 }

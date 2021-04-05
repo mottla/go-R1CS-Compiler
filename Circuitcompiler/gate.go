@@ -10,6 +10,7 @@ type gateType uint8
 
 const (
 	multiplicationGate gateType = iota
+	xorGate
 	returnMultiplicationGate
 	equalityGate
 	additionGate

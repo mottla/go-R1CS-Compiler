@@ -41,7 +41,7 @@ var TestPrograms = []TraceCorrectnessTest{
 	{
 		Skip: false,
 		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(7)), big.NewInt(int64(2))},
+			Inputs: []*big.Int{big.NewInt(int64(15)), big.NewInt(int64(4))},
 			Result: big.NewInt(int64(49)),
 		}},
 		Code: `
@@ -50,7 +50,7 @@ var TestPrograms = []TraceCorrectnessTest{
 	x
 	}
 		
-		return x*x*0xaaBBc434
+		return x==y*y
 	}		
 `,
 	},
@@ -93,13 +93,16 @@ var TestPrograms = []TraceCorrectnessTest{
 	}`,
 	},
 	{
-		Skip: true,
+		Skip: false,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(3))},
 		}},
 
 		Code: `
 func main(x){
+	public{
+	x
+	}
 	return (x*fubunaci(7))
 }
 func fubunaci(a){
@@ -246,7 +249,7 @@ func constraint(x){
 
 `},
 	{
-		Skip: true,
+		Skip: false,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(3)), big.NewInt(int64(4))},
 		}},
@@ -260,15 +263,16 @@ func main(x,y){
 	}
 	#var kk = x*7	
 	var k = execute(multiply,x) 
-	iterate(2,4,1,k)
-	return k(x)
+	
+	return iterate(2,4,1,k)*y*x
 }
 	func iterate(fromX,toX,stepSize, call){       
 		if fromX==toX{           
-			return
+			return 1
 		}			
 		call(fromX)
-		iterate(fromX+stepSize,toX,stepSize,call)
+		return iterate(fromX+stepSize,toX,stepSize,call)
+		 
 	}	
 `},
 	{
