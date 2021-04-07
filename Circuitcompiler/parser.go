@@ -81,7 +81,7 @@ out:
 			//fmt.Println("#############")
 			//fmt.Println(constraint)
 			if constraint.Output.Type == PUBLIC {
-				a := p.GetMainCircuit().resolveArrayName(constraint)
+				a := p.GetMainCircuit().resolveArrayName(constraint.Output.Identifier, constraint.Inputs)
 				p.PublicInputs = append(p.PublicInputs, a)
 			}
 			if checkSemantics {
@@ -254,7 +254,7 @@ func (p *Parser) statementMode(tokens []Token) {
 		}
 		// a = 4;
 		//l, r := splitTokensAtFirstString(tokens[2:], ";")
-		//if r[0].Identifier != ";" {
+		//if r[0].identifier != ";" {
 		//	p.error("';' expected, got %v", r[0])
 		//}
 		//r = r[1:]
@@ -264,7 +264,7 @@ func (p *Parser) statementMode(tokens []Token) {
 		//varConst := &Constraint{
 		//	Output: Token{
 		//		Type:  VARIABLE_DECLARE,
-		//		Identifier: l[1].Identifier,
+		//		identifier: l[1].identifier,
 		//	},
 		//}
 		//p.parseExpression(l[3:], varConst)
@@ -432,7 +432,7 @@ func ArrayStringBuild(in []int64, res string, coll *[]string) {
 	}
 }
 
-// epx := (exp) | exp Operator exp | Identifier(arg) | Identifier | Number | Identifier[exp]
+// epx := (exp) | exp Operator exp | identifier(arg) | identifier | Number | identifier[exp]
 //arg := exp | arg,exp
 func (p *Parser) parseExpression(stack []Token, constraint *Constraint) {
 	//(exp)->exp
@@ -605,7 +605,7 @@ func isArrayAssignment(stx []Token) (yn bool, err string) {
 		return false, "array assignment needs min 3 tokens: a = b"
 	}
 	if stx[0].Type != IDENTIFIER_VARIABLE {
-		return false, "Identifier expected"
+		return false, "identifier expected"
 	}
 
 	if stx[1].Identifier != "[" || stx[2].Identifier != "]" {
@@ -626,7 +626,7 @@ func isVariableAssignment(stx []Token) (yn bool, rem []Token, err string) {
 		return false, nil, "assignment needs min 3 tokens: a = b"
 	}
 	if stx[0].Type != IDENTIFIER_VARIABLE {
-		return false, nil, "Identifier expected"
+		return false, nil, "identifier expected"
 	}
 	if stx[1].Type != AssignmentOperatorToken {
 		return false, nil, "assignment  expected"

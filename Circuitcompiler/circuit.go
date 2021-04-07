@@ -210,10 +210,10 @@ func (currentCircuit *function) preCompile(constraintStack []*Constraint) {
 		}
 		newFunc := RegisterFunctionFromConstraint(currentConstraint, currentCircuit)
 		currentCircuit.functions[currentConstraint.Output.Identifier] = newFunc
-		//currentCircuit.constraintMap[currentConstraint.Output.Identifier] = &Constraint{
+		//currentCircuit.constraintMap[currentConstraint.Output.identifier] = &Constraint{
 		//	Output: Token{
 		//		Type:       FUNCTION_CALL, //if someone accesses the function, he does not necessarily want to call it
-		//		Identifier: currentConstraint.Output.Identifier,
+		//		identifier: currentConstraint.Output.identifier,
 		//	},
 		//	//Inputs: currentConstraint.Inputs,
 		//}
@@ -285,8 +285,8 @@ func (circ *function) contextCheck(constraint *Constraint) {
 	case VARIABLE_OVERLOAD:
 		panic("unexpected reach")
 	case FUNCTION_CALL:
-		//if _, ex := circ.findFunctionInBloodline(constraint.Output.Identifier); !ex {
-		//	panic(fmt.Sprintf("function %s used but not declared", constraint.Output.Identifier))
+		//if _, ex := circ.findFunctionInBloodline(constraint.Output.identifier); !ex {
+		//	panic(fmt.Sprintf("function %s used but not declared", constraint.Output.identifier))
 		//}
 	case VARIABLE_DECLARE:
 		panic("unexpected reach")
@@ -301,8 +301,8 @@ func (circ *function) contextCheck(constraint *Constraint) {
 	case ARRAY_CALL:
 		//we handy arra acces completely during execution now. some precompilation checks could be implemented however
 		//TODO rethink
-		//if _, ex := circ.findConstraintInBloodline(constraint.Output.Identifier); !ex {
-		//	panic(fmt.Sprintf("array %s not declared", constraint.Output.Identifier))
+		//if _, ex := circ.findConstraintInBloodline(constraint.Output.identifier); !ex {
+		//	panic(fmt.Sprintf("array %s not declared", constraint.Output.identifier))
 		//}
 	default:
 
@@ -567,12 +567,13 @@ func (currentCircuit *function) getsLoadedWith(newInputs []*function) (allArgume
 }
 
 //helper function
-func (currentCircuit *function) resolveArrayName(c *Constraint) string {
-	var arrayIdentifier = c.Output.Identifier
+func (currentCircuit *function) resolveArrayName(id string, inputs []*Constraint) string {
+
+	var arrayIdentifier = id
 	//if len(c.Inputs) < 1 {
 	//	panic("accessing array index failed")
 	//}
-	for _, in := range c.Inputs {
+	for _, in := range inputs {
 		indexFactors, _, _ := currentCircuit.compile(in, newGateContainer())
 		if !indexFactors.isSingleNumber() {
 			panic("cannot access array dynamically in an arithmetic circuit currently")

@@ -40,6 +40,18 @@ func (t *Tokens) next() (r Token) {
 	t.toks = t.toks[1:]
 	return r
 }
+func (t Token) toFactors() factors {
+	return factors{factor{
+		Typ:            t,
+		multiplicative: bigOne,
+	}}
+}
+func (t Token) toFactor() factor {
+	return factor{
+		Typ:            t,
+		multiplicative: bigOne,
+	}
+}
 
 var decimalNumberTokens = "0123456789"
 var hexTokens = "0123456789abcdefABCDEF"
@@ -131,7 +143,7 @@ func (ch TokenType) String() string {
 	case UNASIGNEDVAR:
 		return "UNASIGNEDVAR"
 	case IDENTIFIER_VARIABLE:
-		return "Identifier"
+		return "identifier"
 	case CommentToken:
 		return "commentToken"
 	case AssignmentOperatorToken:
@@ -477,8 +489,8 @@ func IdentState(l *Lexer) StateFunc {
 		return ProbablyWhitespaceState
 	}
 
-	//it wasnt a keyword, so we assume its an Identifier
-	//identifiers do not require a whitespace (like func foo(), has '(' after Identifier 'foo')
+	//it wasnt a keyword, so we assume its an identifier
+	//identifiers do not require a whitespace (like func foo(), has '(' after identifier 'foo')
 	l.Emit(IDENTIFIER_VARIABLE)
 	return ProbablyWhitespaceState
 }

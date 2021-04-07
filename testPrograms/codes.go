@@ -41,17 +41,19 @@ var TestPrograms = []TraceCorrectnessTest{
 	{
 		Skip: false,
 		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(15)), big.NewInt(int64(4))},
+			Inputs: []*big.Int{big.NewInt(int64(5)), big.NewInt(int64(5))},
 			Result: big.NewInt(int64(49)),
 		}},
 		Code: `
 	func main( x,y ) {
 	public{
-	x
+		x
 	}
-		
-		return x==y*y
-	}		
+		SPLIT(x)
+
+		return x[0]==y
+	}
+	
 `,
 	},
 	{
@@ -93,7 +95,7 @@ var TestPrograms = []TraceCorrectnessTest{
 	}`,
 	},
 	{
-		Skip: false,
+		Skip: true,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(3))},
 		}},
@@ -116,7 +118,7 @@ func fubunaci(a){
 }
 `},
 	{
-		Skip: true,
+		Skip: false,
 		IO: []InOut{{
 			Inputs: sudoku(),
 		}},
@@ -249,7 +251,7 @@ func constraint(x){
 
 `},
 	{
-		Skip: false,
+		Skip: true,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(3)), big.NewInt(int64(4))},
 		}},
@@ -276,7 +278,7 @@ func main(x,y){
 	}	
 `},
 	{
-		Skip: true,
+		Skip: false,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(1))},
 		}},

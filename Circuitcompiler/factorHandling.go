@@ -155,7 +155,7 @@ func mulFactors(leftFactors, rightFactors factors) (result factors) {
 				res := field.Mul(right.multiplicative, left.multiplicative)
 				leftFactors[i] = factor{Typ: Token{Type: DecimalNumberToken, Identifier: res.String()}, multiplicative: res}
 				//res := field.MulNaive(right.multiplicative, left.multiplicative)
-				//leftFactors[i] = &factor{Typ: Token{Type: DecimalNumberToken, Identifier: res.String()}, multiplicative: res}
+				//leftFactors[i] = &factor{Typ: Token{Type: DecimalNumberToken, identifier: res.String()}, multiplicative: res}
 				continue
 
 			}
@@ -163,7 +163,7 @@ func mulFactors(leftFactors, rightFactors factors) (result factors) {
 			//this one should only be reached, after a true multiplicationGate had its left and right braches computed. here we
 			//a factor can appear at most in quadratic form. we reduce terms a*a^-1 here.
 			//if right.Typ.Type&left.Typ.Type&IN != 0 {
-			//	if left.Typ.Identifier == right.Typ.Identifier {
+			//	if left.Typ.identifier == right.Typ.identifier {
 			//		if right.invert != left.invert {
 			//			leftFactors[i] = &factor{Typ: Token{Type: DecimalNumberToken}, multiplicative: field.MulNaive(right.multiplicative, left.multiplicative)}
 			//			continue
@@ -296,7 +296,7 @@ func (from factor) primitiveReturnfunction() (gives *function) {
 	rmp.taskStack.add(&Constraint{
 		Output: Token{
 			Type: RETURN,
-			//Identifier: fmt.Sprintf("%v*%v",from.multiplicative.String(),from.Typ.Identifier),
+			//identifier: fmt.Sprintf("%v*%v",from.multiplicative.String(),from.Typ.identifier),
 			Identifier: "",
 		},
 		Inputs: []*Constraint{

@@ -13,6 +13,12 @@ import (
 func (currentCircuit *function) compile(currentConstraint *Constraint, gateCollector *gateContainer) (facs factors, reachedReturn bool, preloadedFunction function) {
 
 	switch currentConstraint.Output.Type {
+	case ARGUMENT:
+
+		return Token{
+			Type:       ARGUMENT,
+			Identifier: currentConstraint.Output.Identifier,
+		}.toFactors(), false, function{}
 	case DecimalNumberToken:
 		value, success := utils.Field.ArithmeticField.StringToFieldElement(currentConstraint.Output.Identifier)
 		if !success {
@@ -21,7 +27,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		f := factor{Typ: Token{Type: DecimalNumberToken, Identifier: currentConstraint.Output.Identifier}, multiplicative: value}
 		return factors{f}, false, function{}
 	case IDENTIFIER_VARIABLE:
-		// an Identifier is always a lone indentifier. If such one is reached. we are at a leaf and either can resolve him as argument or declared function/variable
+		// an identifier is always a lone indentifier. If such one is reached. we are at a leaf and either can resolve him as argument or declared function/variable
 
 		if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); ex {
 			if f.isNumber {
@@ -45,7 +51,8 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 
 	case FOR:
 		//we check the condition each time we rerun the loop
-		for isStatic, isSat := currentCircuit.checkStaticCondition(currentConstraint.Inputs[0]); isSat && isStatic; {
+		isStatic, isSat := currentCircuit.checkStaticCondition(currentConstraint.Inputs[0])
+		for isSat && isStatic {
 			content := &Constraint{
 				Output: Token{
 					Type:       FUNCTION_CALL,
@@ -56,7 +63,9 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			if retu {
 				return f, true, fkt
 			}
+			//the increment condition i += 1
 			currentCircuit.compile(currentConstraint.Inputs[1], gateCollector)
+			isStatic, isSat = currentCircuit.checkStaticCondition(currentConstraint.Inputs[0])
 		}
 		return nil, false, function{}
 	case UNASIGNEDVAR:
@@ -74,22 +83,19 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	case RETURN:
 		switch len(currentConstraint.Inputs) {
 		case 0:
-			fac := factor{Typ: Token{
+			fac := Token{
 				Type: DecimalNumberToken,
-			}, multiplicative: big.NewInt(1)}
-			return factors{fac}, true, function{}
+			}
+			return fac.toFactors(), true, function{}
 		case 1:
 			f, _, fkt := currentCircuit.compile(currentConstraint.Inputs[0], gateCollector)
 			return f, true, fkt
+		case 3:
+
 		default:
 			panic("not possible")
 		}
-	case ARGUMENT:
-		fac := factor{Typ: Token{
-			Type:       ARGUMENT,
-			Identifier: currentConstraint.Output.Identifier,
-		}, multiplicative: big.NewInt(1)}
-		return factors{fac}, false, function{}
+
 	case VARIABLE_OVERLOAD:
 
 		if len(currentConstraint.Inputs) != 2 {
@@ -99,9 +105,16 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		var toOverloadIdentifier = currentConstraint.Inputs[0].Output.Identifier
 
 		if currentConstraint.Inputs[0].Output.Type == ARRAY_CALL {
+			var id string
+			if f, ex := currentCircuit.findFunctionInBloodline(toOverloadIdentifier); !ex {
+				id = currentConstraint.Inputs[0].Output.Identifier
+			} else {
+				id = f.Name
+			}
 			// myArray[7*3] = expression
-			toOverloadIdentifier = currentCircuit.resolveArrayName(currentConstraint.Inputs[0])
+			toOverloadIdentifier = currentCircuit.resolveArrayName(id, currentConstraint.Inputs[0].Inputs)
 			//myArray[21] = expression
+
 		}
 
 		//resolve the expression
@@ -121,7 +134,17 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		return facs, false, function{}
 
 	case ARRAY_CALL:
-		resolvedName := currentCircuit.resolveArrayName(currentConstraint)
+		var id string
+		if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); !ex {
+			id = currentConstraint.Output.Identifier
+		} else {
+			id = f.Name
+		}
+		resolvedName := currentCircuit.resolveArrayName(id, currentConstraint.Inputs)
+		if f, ex := currentCircuit.findFunctionInBloodline(resolvedName); ex {
+			return f.execute(gateCollector)
+		}
+
 		if con, ex := currentCircuit.findConstraintInBloodline(resolvedName); ex {
 			a, _, fkt := currentCircuit.compile(con, gateCollector)
 			return a, false, fkt
@@ -185,13 +208,10 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				//but what about overwrites inside the statement of variables outside the scope? problem for future
 				//mathias, or I give up the concept of overloading variables
 
-				one := factors{factor{
-					Typ: Token{
-						Type:       DecimalNumberToken,
-						Identifier: "",
-					},
-					multiplicative: bigOne,
-				}}
+				one := Token{
+					Type:       DecimalNumberToken,
+					Identifier: "1",
+				}
 				negateFkt := combineFunctions("-", one.primitiveReturnfunction(), &condition)
 				negatedConditions = append(negatedConditions, negateFkt)
 
@@ -212,33 +232,15 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			//break point
 			return nil, false, function{}
 		case "SPLIT":
-			if len(currentConstraint.Inputs) != 1 {
-				panic("split")
+			if len(currentConstraint.Inputs) == 0 {
+				//nothing to do
+				return nil, false, function{}
 			}
 			//prepare input number Z
 			arg := currentConstraint.Inputs[0].clone()
-			in, _, _ := currentCircuit.compile(arg, gateCollector)
-			if len(in) != 1 {
-				panic("arguments in split must be pure")
-			}
-			split(gateCollector, arg.Output)
-			//hmm what is this actually good for
-			//sig := hashFactorsToBig(in).String()[:16]
-
-			//get the number N of bits needed to represent an arbitrary element of the finite field
-
+			currentCircuit.SPLIT(true, arg, gateCollector)
 			return nil, false, function{}
-		case "AND":
-			if len(currentConstraint.Inputs) != 2 {
-				panic("addition constraint requires 2 arguments")
-			}
-			//leftClone := currentConstraint.Inputs[0].clone()
-			//rightClone := currentConstraint.Inputs[1].clone()
-			//leftFactors, _, _ := currentCircuit.compile(leftClone, gateCollector)
-			//rightFactors, _, _ := currentCircuit.compile(rightClone, gateCollector)
-		case "NAND":
-		case "OR":
-		case "NOT":
+
 		case "addGateConstraint":
 			if len(currentConstraint.Inputs) != 2 {
 				panic("addition constraint requires 2 arguments")
@@ -249,25 +251,14 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			rightFactors, _, _ := currentCircuit.compile(rightClone, gateCollector)
 			commonExtracted, extractedLeft, extractedRight := extractConstant(leftFactors, rightFactors)
 
-			rootGate := &Gate{
-				gateType: additionGate,
-				leftIns:  addFactors(extractedLeft, extractedRight),
-			}
+			sGate := summationGate(addFactors(extractedLeft, extractedRight))
+			id := gateCollector.Add(sGate)
 
-			nTok := Token{
-				Type:       ARGUMENT,
-				Identifier: rootGate.setAndGetID(),
-			}
-			gateCollector.Add(rootGate)
-			rootGate.outIns = factors{factor{
-				Typ:            nTok,
-				multiplicative: bigOne,
-			}}
-			fres := factor{
-				Typ:            nTok,
+			fres := factors{factor{
+				Typ:            id,
 				multiplicative: commonExtracted,
-			}
-			return factors{fres}, false, function{}
+			}}
+			return fres, false, *fres.primitiveReturnfunction()
 		case "equal":
 			if len(currentConstraint.Inputs) != 2 {
 				panic("equality constraint requires 2 arguments")
@@ -276,14 +267,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			rightClone := currentConstraint.Inputs[1].clone()
 			leftFactors, _, _ := currentCircuit.compile(leftClone, gateCollector)
 			rightFactors, _, _ := currentCircuit.compile(rightClone, gateCollector)
-
-			rootGate := &Gate{
-				gateType:    equalityGate,
-				leftIns:     leftFactors,
-				rightIns:    rightFactors,
-				noNewOutput: true,
-			}
-			gateCollector.Add(rootGate)
+			gateCollector.Add(equalityGate(leftFactors, rightFactors))
 			return nil, false, function{}
 		default:
 			var nextCircuit *function
@@ -331,65 +315,26 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 
 		switch operation.Type {
 		case BinaryComperatorToken:
-			leftFactors, _, _ = currentCircuit.compile(left, gateCollector)
-			rightFactors, _, _ = currentCircuit.compile(right, gateCollector)
 
 			switch operation.Identifier {
 			case "==":
-				bitsLeft := split(gateCollector, leftFactors[0].Typ)
-				bitsRight := split(gateCollector, rightFactors[0].Typ)
+				bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
+				bitsRight := currentCircuit.SPLIT(false, right, gateCollector)
 
-				xorIDs := make([]string, len(bitsRight))
+				xorIDs := make([]Token, len(bitsRight))
 
 				for i := 0; i < len(bitsLeft); i++ {
 					// a xor b = c as arithmetic circuit (asserting that a,b \in {0,1}
 					// 2a*b = c + a + b - 1
-					one := factor{
-						Typ: Token{
-							Type: DecimalNumberToken,
-						},
-						multiplicative: new(big.Int).SetInt64(1),
-					}
-					var mGate = new(Gate)
-					mGate.gateType = multiplicationGate
 
-					mGate.leftIns = factors{bitsLeft[i].SetMultiplicative(new(big.Int).SetInt64(2))}
-					mGate.rightIns = factors{bitsRight[i]}
-					mGate.outIns = factors{one.Negate(), bitsLeft[i], bitsRight[i]}
-
-					print(mGate.Identifier)
-					xor := factor{
-						Typ: Token{Identifier: mGate.ID()},
-					}
-					mGate.outIns = append(mGate.outIns, xor)
-					xorIDs[i] = gateCollector.Add(mGate)
+					xorIDs[i] = gateCollector.Add(xorGate(bitsLeft[i], bitsRight[i]))
 				}
 				first := xorIDs[0]
 				for i := 1; i < len(xorIDs); i++ {
-					mGate := &Gate{
-						Identifier: "",
-						gateType:   multiplicationGate,
-						leftIns: factors{factor{
-							Typ: Token{Identifier: first},
-						}},
-						rightIns: factors{factor{
-							Typ: Token{Identifier: xorIDs[i]},
-						}},
-					}
-					first = mGate.ID()
-					tok := Token{
-						Type:       ARGUMENT,
-						Identifier: first}
-
-					mGate.outIns = factors{factor{
-						Typ: tok,
-					}}
-					gateCollector.Add(mGate)
+					first = gateCollector.Add(multiplicationGate(first.toFactors(), xorIDs[i].toFactors()))
 				}
-				tok := Token{
-					Type:       ARGUMENT,
-					Identifier: first}
-				return factors{factor{Typ: tok}}, false, *tok.primitiveReturnfunction()
+				tok := first
+				return tok.toFactors(), false, *tok.primitiveReturnfunction()
 			case "!=":
 
 				break
@@ -408,7 +353,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			default:
 
 			}
-			panic("not supported")
+
 			break
 		case BitOperatorToken:
 			break
@@ -424,21 +369,13 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 					return mulFactors(leftFactors, rightFactors), currentConstraint.Output.Type == RETURN, function{}
 				}
 				commonFactor, newLeft, newRight := extractConstant(leftFactors, rightFactors)
-				mGate := &Gate{
-					gateType: multiplicationGate,
-					leftIns:  newLeft,
-					rightIns: newRight,
-				}
-				id := gateCollector.Add(mGate)
-				//TODO this is bad. why manipulate the gate after insert
-				nTok := Token{Type: ARGUMENT, Identifier: id}
-				mGate.outIns = factors{factor{
-					Typ:            nTok,
-					multiplicative: bigOne,
-				}}
+				mGate := multiplicationGate(newLeft, newRight)
+				nTok := gateCollector.Add(mGate)
+
 				f := factor{Typ: nTok, multiplicative: commonFactor}
 				return factors{f}, currentConstraint.Output.Type == RETURN, function{}
 			case "/":
+				//a / b
 				leftFactors, _, _ = currentCircuit.compile(left, gateCollector)
 				rightFactors, _, _ = currentCircuit.compile(right, gateCollector)
 
@@ -449,17 +386,15 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				gcdl, facL := factorSignature(leftFactors)
 				gcdR, facR := factorSignature(rightFactors)
 				commonF := field.Div(gcdl, gcdR)
-				mGate := &Gate{
-					gateType: multiplicationGate,
-					rightIns: facR,
-					outIns:   facL,
-				}
-				gateCollector.Add(mGate)
-				nTok := Token{Type: ARGUMENT, Identifier: mGate.ID()}
-				mGate.leftIns = factors{factor{
-					Typ:            nTok,
-					multiplicative: bigOne,
-				}}
+
+				//inverse gate enforces the input to be non zero
+				//eg. b*b^-1 = 1
+				var inversB = inverseGate(facR)
+				var g = divisionGate(facL, facR)
+
+				gateCollector.Add(inversB)
+				nTok := gateCollector.Add(g)
+
 				f := factor{Typ: nTok, multiplicative: commonF}
 				return factors{f}, currentConstraint.Output.Type == RETURN, function{}
 			case "+":
@@ -485,7 +420,31 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	}
 	panic(currentConstraint)
 }
-func split(gateCollector *gateContainer, arg Token) (bits []factor) {
+
+func (currentCircuit *function) SPLIT(makeTheBitsAvailableInCurrentCircuit bool, toSplit *Constraint, gateCollector *gateContainer) (bits []factor) {
+
+	in, _, _ := currentCircuit.compile(toSplit, gateCollector)
+	if len(in) > 1 {
+		tok := gateCollector.Add(summationGate(in))
+		return split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, tok)
+	}
+	if in.isSingleNumber() {
+		fmt.Println("you really wanna split a constant number into its bits? ")
+	}
+	//if say : Split(5*x), then we need to introduce the constant multiplication gate. even if its stupid..
+	if in[0].multiplicative.Cmp(bigOne) != 0 {
+		one := Token{
+			Type: DecimalNumberToken,
+		}.toFactors()
+		tok := gateCollector.Add(multiplicationGate(in, one))
+
+		return split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, tok)
+	}
+
+	return split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, in[0].Typ)
+}
+
+func split(makeTheBitsAvailableInCurrentCircuit bool, currentCircuit *function, gateCollector *gateContainer, arg Token) (bits []factor) {
 	N := utils.Field.ArithmeticField.Q.BitLen() - 1
 	//we create N new R1CS elements Z_i. 			//
 	//each represents a bit of Z
@@ -498,36 +457,31 @@ func split(gateCollector *gateContainer, arg Token) (bits []factor) {
 		nTok := Token{
 			Type: ARGUMENT,
 			//wirst the number, then the variable, to avoid collisions
-			Identifier: fmt.Sprintf("%v%v", i, arg.Identifier),
+			Identifier: fmt.Sprintf("%v[%v]", arg.Identifier, i),
 		}
-		zeroOrOneGate := &Gate{
-			gateType:                zeroOrOneGate,
-			Identifier:              nTok.Identifier,
-			arithmeticRepresentatnt: arg,
-		}
-		gateCollector.Add(zeroOrOneGate)
+		zeroOrOneGate := zeroOrOneGate(nTok.Identifier, arg.Identifier)
 
-		bitsScaled[i] = factor{
-			Typ:            nTok,
-			multiplicative: new(big.Int).Lsh(bigOne, uint(i)),
+		bit := gateCollector.Add(zeroOrOneGate)
+
+		bitsScaled[i] =
+			factor{
+				Typ:            bit,
+				multiplicative: new(big.Int).Lsh(bigOne, uint(i)),
+			}
+
+		bits[i] = bit.toFactor()
+		//say we split var x, from now on we can call x[i] to get the i'th bit
+		if makeTheBitsAvailableInCurrentCircuit {
+			currentCircuit.functions[nTok.Identifier] = bit.primitiveReturnfunction()
 		}
-		bits[i] = factor{
-			Typ:            nTok,
-			multiplicative: bigOne,
-		}
+
 		// we need to add the bits during precompilations so we can access them like from an array
 		//	currentCircuit.constraintMap
 	}
 	//add the bits constraint \bits Z_i 2^i = Z to ensure that the Zi are the bit representation of Z
 
-	sumgate := &Gate{
-		gateType:                sumCheckGate,
-		arithmeticRepresentatnt: arg,
-		leftIns:                 bitsScaled,
-		noNewOutput:             true,
-	}
-	//cConstraint[indexMap[g.value.Identifier.Identifier]] = g.extractedConstants
-	gateCollector.Add(sumgate)
+	//cConstraint[indexMap[g.value.identifier.identifier]] = g.extractedConstants
+	gateCollector.Add(equalityGate(bitsScaled, arg.toFactors()))
 	return bits
 }
 
@@ -635,18 +589,19 @@ func (p *Program) GatesToR1CS(mGates []*Gate) (r1CS *R1CS) {
 			//size = size - 1
 			continue
 		}
-		if _, ex := indexMap[v.Identifier]; !ex {
-			indexMap[v.Identifier] = len(indexMap)
+		if _, ex := indexMap[v.ID()]; !ex {
+			indexMap[v.ID()] = len(indexMap)
 
 		} else {
-			panic(fmt.Sprintf("rewriting %v ", v.Identifier))
+			panic(fmt.Sprintf("rewriting %v ", v.identifier))
 		}
 		//we store where a variables bit representatives are
-		if v.gateType == zeroOrOneGate {
-			if _, ex := r1CS.splitmap[v.arithmeticRepresentatnt.Identifier]; !ex {
-				r1CS.splitmap[v.arithmeticRepresentatnt.Identifier] = []int{indexMap[v.Identifier]}
+		//TODO suspicious.. we should probablly consider the bit position
+		if v.isABitOf != "" {
+			if _, ex := r1CS.splitmap[v.isABitOf]; !ex {
+				r1CS.splitmap[v.isABitOf] = []int{indexMap[v.identifier]}
 			} else {
-				r1CS.splitmap[v.arithmeticRepresentatnt.Identifier] = append(r1CS.splitmap[v.arithmeticRepresentatnt.Identifier], indexMap[v.Identifier])
+				r1CS.splitmap[v.isABitOf] = append(r1CS.splitmap[v.isABitOf], indexMap[v.identifier])
 			}
 		}
 	}
@@ -677,101 +632,26 @@ func (p *Program) GatesToR1CS(mGates []*Gate) (r1CS *R1CS) {
 			g.leftIns = tmp
 		}
 
-		switch g.gateType {
-		case multiplicationGate:
-			aConstraint := utils.ArrayOfBigZeros(size)
-			bConstraint := utils.ArrayOfBigZeros(size)
+		aConstraint := utils.ArrayOfBigZeros(size)
+		bConstraint := utils.ArrayOfBigZeros(size)
+		cConstraint := utils.ArrayOfBigZeros(size)
 
-			cConstraint := utils.ArrayOfBigZeros(size)
-
-			for _, val := range g.leftIns {
-				insertValue(val, aConstraint)
-			}
-
-			for _, val := range g.rightIns {
-				insertValue(val, bConstraint)
-			}
-
-			for _, val := range g.outIns {
-				insertValue(val, cConstraint)
-			}
-
-			//cConstraint[indexMap[g.Identifier]] = g.extractedConstants
-
-			//cConstraint[indexMap[g.value.Identifier]] = big.NewInt(int64(1))
-
-			r1CS.L = append(r1CS.L, aConstraint)
-			r1CS.R = append(r1CS.R, bConstraint)
-			r1CS.O = append(r1CS.O, cConstraint)
-			break
-
-		case equalityGate:
-			aConstraint := utils.ArrayOfBigZeros(size)
-			bConstraint := utils.ArrayOfBigZeros(size)
-
-			cConstraint := utils.ArrayOfBigZeros(size)
-
-			for _, val := range g.leftIns {
-				insertValue(val, aConstraint)
-			}
-
-			for _, val := range g.rightIns {
-				insertValue(val, cConstraint)
-			}
-
-			bConstraint[0] = big.NewInt(int64(1))
-
-			r1CS.L = append(r1CS.L, aConstraint)
-			r1CS.R = append(r1CS.R, bConstraint)
-			r1CS.O = append(r1CS.O, cConstraint)
-			break
-		case zeroOrOneGate:
-			// (n-1)n = 0 to ensure n == 1 or 0
-			aConstraint := utils.ArrayOfBigZeros(size)
-			bConstraint := utils.ArrayOfBigZeros(size)
-
-			cConstraint := utils.ArrayOfBigZeros(size)
-
-			aConstraint[0] = big.NewInt(int64(-1))
-			aConstraint[indexMap[g.Identifier]] = big.NewInt(int64(1))
-			bConstraint[indexMap[g.Identifier]] = big.NewInt(int64(1))
-			r1CS.L = append(r1CS.L, aConstraint)
-			r1CS.R = append(r1CS.R, bConstraint)
-			r1CS.O = append(r1CS.O, cConstraint)
-			break
-		case additionGate:
-			aConstraint := utils.ArrayOfBigZeros(size)
-			bConstraint := utils.ArrayOfBigZeros(size)
-			cConstraint := utils.ArrayOfBigZeros(size)
-
-			for _, val := range g.leftIns {
-				insertValue(val, aConstraint)
-			}
-			bConstraint[0] = big.NewInt(int64(1))
-			for _, val := range g.outIns {
-				insertValue(val, cConstraint)
-			}
-			r1CS.L = append(r1CS.L, aConstraint)
-			r1CS.R = append(r1CS.R, bConstraint)
-			r1CS.O = append(r1CS.O, cConstraint)
-			break
-		case sumCheckGate:
-			aConstraint := utils.ArrayOfBigZeros(size)
-			bConstraint := utils.ArrayOfBigZeros(size)
-			cConstraint := utils.ArrayOfBigZeros(size)
-
-			for _, val := range g.leftIns {
-				insertValue(val, aConstraint)
-			}
-			bConstraint[0] = big.NewInt(int64(1))
-			cConstraint[indexMap[g.arithmeticRepresentatnt.Identifier]] = big.NewInt(int64(1))
-			r1CS.L = append(r1CS.L, aConstraint)
-			r1CS.R = append(r1CS.R, bConstraint)
-			r1CS.O = append(r1CS.O, cConstraint)
-			break
-		default:
-			panic("no supported gate type")
+		for _, val := range g.leftIns {
+			insertValue(val, aConstraint)
 		}
+
+		for _, val := range g.rightIns {
+			insertValue(val, bConstraint)
+		}
+
+		for _, val := range g.outIns {
+			insertValue(val, cConstraint)
+		}
+
+		r1CS.L = append(r1CS.L, aConstraint)
+		r1CS.R = append(r1CS.R, bConstraint)
+		r1CS.O = append(r1CS.O, cConstraint)
+
 	}
 
 	r1CS.NumberOfGates = len(r1CS.L)

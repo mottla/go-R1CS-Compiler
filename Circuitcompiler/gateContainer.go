@@ -36,19 +36,7 @@ func (g *gateContainer) completeFunction(f factors) {
 	// if we now return, we get the factor 12. we expect the prover to perform the computation x*12
 	// Note that some optimization still could be done here. if a gate is not used by others, we could multiply the factor into it
 	// insteead of creating a new addition gate
-	rootGate := &Gate{
-		gateType:   additionGate,
-		Identifier: f.factorSignature(),
-		leftIns:    f,
-		outIns: factors{factor{
-			Typ: Token{
-				Type:       ARGUMENT,
-				Identifier: f.factorSignature(),
-			},
-			multiplicative: bigOne,
-		}},
-	}
-	g.Add(rootGate)
+	g.Add(summationGate(f))
 
 }
 
@@ -57,7 +45,7 @@ func (g *gateContainer) contains(tok string) bool {
 	return ex
 }
 
-func (g *gateContainer) Add(gate *Gate) (id string) {
+func (g *gateContainer) Add(gate *Gate) (id Token) {
 
 	if !g.contains(gate.ID()) {
 		g.computedFactors[gate.ID()] = true
@@ -65,6 +53,9 @@ func (g *gateContainer) Add(gate *Gate) (id string) {
 	} else {
 		//fmt.Println("saved reuse of "+gate.String())
 	}
-
-	return gate.ID()
+	id = Token{
+		Type:       ARGUMENT,
+		Identifier: gate.ID(),
+	}
+	return id
 }
