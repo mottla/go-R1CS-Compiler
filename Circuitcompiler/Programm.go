@@ -116,7 +116,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			//myArray[21] = expression
 
 		}
-
+		//new(big.Int).Xor()
 		//resolve the expression
 		facs, _, fkt := currentCircuit.compile(currentConstraint.Inputs[1], gateCollector)
 		context, ex := currentCircuit.getCircuitContainingFunctionInBloodline(toOverloadIdentifier)
@@ -318,23 +318,61 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 
 			switch operation.Identifier {
 			case "==":
-				bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
-				bitsRight := currentCircuit.SPLIT(false, right, gateCollector)
+				argLeft, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
+				argRight, bitsRight := currentCircuit.SPLIT(false, right, gateCollector)
 
-				xorIDs := make([]Token, len(bitsRight))
+				xorIDs := make(factors, len(bitsRight))
 
 				for i := 0; i < len(bitsLeft); i++ {
 					// a xor b = c as arithmetic circuit (asserting that a,b \in {0,1}
 					// 2a*b = c + a + b - 1
+					xorIDs[i] = gateCollector.Add(xorGate(bitsLeft[i], bitsRight[i])).toFactor()
+				}
 
-					xorIDs[i] = gateCollector.Add(xorGate(bitsLeft[i], bitsRight[i]))
+				// we now want to AND all xors
+				// so first we now that our result bit will be one or zero
+				// c1 * (1-c1) = 0
+				zg := zeroOrOneGate(xorIDs.factorSignature())
+				zg.computeYourselfe = func(witness *[]*big.Int, set *[]bool, indexMap map[string]int) bool {
+					if (*set)[indexMap[argLeft.Identifier]] && (*set)[indexMap[argRight.Identifier]] {
+						l := (*witness)[indexMap[argLeft.Identifier]]
+						r := (*witness)[indexMap[argRight.Identifier]]
+						(*set)[indexMap[zg.ID()]] = true
+						result := 1 - int64(utils.AbsInt(l.Cmp(r)))
+						(*witness)[indexMap[zg.ID()]] = new(big.Int).SetInt64(result)
+						return true
+					}
+					return false
 				}
-				first := xorIDs[0]
-				for i := 1; i < len(xorIDs); i++ {
-					first = gateCollector.Add(multiplicationGate(first.toFactors(), xorIDs[i].toFactors()))
+
+				c1 := gateCollector.Add(zg)
+
+				//nex we now that (N - Sum_i xor_i ) * b = 0
+				// -> if b is 1, then all xors must be 1 as well
+				minusN := factor{Typ: Token{
+					Type:       DecimalNumberToken,
+					Identifier: "",
+				},
+					multiplicative: new(big.Int).SetInt64(-int64(len(xorIDs))),
 				}
-				tok := first
-				return tok.toFactors(), false, *tok.primitiveReturnfunction()
+				// -N + Sum_i xor_i -> N - Sum_i xor_i
+				sumtherm := (append(xorIDs, minusN)).Negate()
+
+				gateCollector.Add(zeroConstraintGate(sumtherm, c1.toFactors()))
+
+				//finally, if b =0 , then the sum over all xors is some number less then N
+				// so we need to ensure that (N - Sum_i xor_i ) * (N - Sum_i xor_i )^-1 = 1-b
+				//
+				inverseSumtherm := gateCollector.Add(inverseGate(sumtherm))
+				//
+				var c3 = new(Gate)
+				c3.leftIns = sumtherm
+				c3.noNewOutput = true
+				//c3.rightIns = inverseSumtherm.toFactors()
+				c3.outIns = factors{Token{Type: DecimalNumberToken}.toFactor(), c1.toFactor().Negate()}
+				c3.rightIns = inverseSumtherm.toFactors()
+				gateCollector.Add(c3)
+				return c1.toFactors(), false, function{}
 			case "!=":
 
 				break
@@ -385,7 +423,8 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 
 				gcdl, facL := factorSignature(leftFactors)
 				gcdR, facR := factorSignature(rightFactors)
-				commonF := field.Div(gcdl, gcdR)
+				//TODO is this a good idea?
+				commonF := utils.Field.ArithmeticField.Div(gcdl, gcdR)
 
 				//inverse gate enforces the input to be non zero
 				//eg. b*b^-1 = 1
@@ -421,12 +460,12 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	panic(currentConstraint)
 }
 
-func (currentCircuit *function) SPLIT(makeTheBitsAvailableInCurrentCircuit bool, toSplit *Constraint, gateCollector *gateContainer) (bits []factor) {
+func (currentCircuit *function) SPLIT(makeTheBitsAvailableInCurrentCircuit bool, toSplit *Constraint, gateCollector *gateContainer) (arg Token, bits []factor) {
 
 	in, _, _ := currentCircuit.compile(toSplit, gateCollector)
 	if len(in) > 1 {
 		tok := gateCollector.Add(summationGate(in))
-		return split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, tok)
+		return tok, split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, tok)
 	}
 	if in.isSingleNumber() {
 		fmt.Println("you really wanna split a constant number into its bits? ")
@@ -438,14 +477,15 @@ func (currentCircuit *function) SPLIT(makeTheBitsAvailableInCurrentCircuit bool,
 		}.toFactors()
 		tok := gateCollector.Add(multiplicationGate(in, one))
 
-		return split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, tok)
+		return tok, split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, tok)
 	}
 
-	return split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, in[0].Typ)
+	return in[0].Typ, split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, in[0].Typ)
 }
 
 func split(makeTheBitsAvailableInCurrentCircuit bool, currentCircuit *function, gateCollector *gateContainer, arg Token) (bits []factor) {
-	N := utils.Field.ArithmeticField.Q.BitLen() - 1
+	N := utils.Field.ArithmeticField.Q.BitLen()
+	N = N - 1
 	//we create N new R1CS elements Z_i. 			//
 	//each represents a bit of Z
 	//each Z_i is introduced by a constraint  (Z_i - 1 ) * Z_i = 0, to ensure its either 0 or 1
@@ -459,7 +499,7 @@ func split(makeTheBitsAvailableInCurrentCircuit bool, currentCircuit *function, 
 			//wirst the number, then the variable, to avoid collisions
 			Identifier: fmt.Sprintf("%v[%v]", arg.Identifier, i),
 		}
-		zeroOrOneGate := zeroOrOneGate(nTok.Identifier, arg.Identifier)
+		zeroOrOneGate := zeroOrOneGate(nTok.Identifier)
 
 		bit := gateCollector.Add(zeroOrOneGate)
 
@@ -481,7 +521,18 @@ func split(makeTheBitsAvailableInCurrentCircuit bool, currentCircuit *function, 
 	//add the bits constraint \bits Z_i 2^i = Z to ensure that the Zi are the bit representation of Z
 
 	//cConstraint[indexMap[g.value.identifier.identifier]] = g.extractedConstants
-	gateCollector.Add(equalityGate(bitsScaled, arg.toFactors()))
+	eq := equalityGate(bitsScaled, arg.toFactors())
+	eq.computeYourselfe = func(witness *[]*big.Int, set *[]bool, indexMap map[string]int) bool {
+		if (*set)[indexMap[arg.Identifier]] {
+			for i, bit := range bits {
+				(*witness)[indexMap[bit.Typ.Identifier]] = big.NewInt(int64((*witness)[indexMap[arg.Identifier]].Bit(i)))
+				(*set)[indexMap[bit.Typ.Identifier]] = true
+			}
+			return true
+		}
+		return false
+	}
+	gateCollector.Add(eq)
 	return bits
 }
 
@@ -584,6 +635,10 @@ func (p *Program) GatesToR1CS(mGates []*Gate) (r1CS *R1CS) {
 	}
 
 	for _, v := range mGates {
+		if v.computeYourselfe != nil {
+			r1CS.triggers = append(r1CS.triggers, v.computeYourselfe)
+		}
+
 		//there are gates, which do not increase the size of the trace such as equality check constraint, sum check constraint after binary split
 		if v.noNewOutput {
 			//size = size - 1
@@ -597,13 +652,13 @@ func (p *Program) GatesToR1CS(mGates []*Gate) (r1CS *R1CS) {
 		}
 		//we store where a variables bit representatives are
 		//TODO suspicious.. we should probablly consider the bit position
-		if v.isABitOf != "" {
-			if _, ex := r1CS.splitmap[v.isABitOf]; !ex {
-				r1CS.splitmap[v.isABitOf] = []int{indexMap[v.identifier]}
-			} else {
-				r1CS.splitmap[v.isABitOf] = append(r1CS.splitmap[v.isABitOf], indexMap[v.identifier])
-			}
-		}
+		//if v.isABitOf != "" {
+		//	if _, ex := r1CS.splitmap[v.isABitOf]; !ex {
+		//		r1CS.splitmap[v.isABitOf] = []int{indexMap[v.identifier]}
+		//	} else {
+		//		r1CS.splitmap[v.isABitOf] = append(r1CS.splitmap[v.isABitOf], indexMap[v.identifier])
+		//	}
+		//}
 	}
 
 	insertValue := func(val factor, arr []*big.Int) {

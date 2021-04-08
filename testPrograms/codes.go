@@ -41,7 +41,7 @@ var TestPrograms = []TraceCorrectnessTest{
 	{
 		Skip: false,
 		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(5)), big.NewInt(int64(5))},
+			Inputs: []*big.Int{big.NewInt(int64(2345235)), big.NewInt(int64(2345235 * 2345235))},
 			Result: big.NewInt(int64(49)),
 		}},
 		Code: `
@@ -49,9 +49,9 @@ var TestPrograms = []TraceCorrectnessTest{
 	public{
 		x
 	}
-		SPLIT(x)
-
-		return x[0]==y
+		SPLIT(x*x)
+		SPLIT(y*y)
+		return (x*x) == y
 	}
 	
 `,

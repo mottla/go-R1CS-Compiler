@@ -126,7 +126,7 @@ func max(a, b int) int {
 	}
 	return b
 }
-func abs(i int) int {
+func AbsInt(i int) int {
 	if i < 0 {
 		return -i
 	}

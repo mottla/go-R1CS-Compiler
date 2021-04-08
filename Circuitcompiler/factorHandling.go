@@ -3,14 +3,12 @@ package Circuitcompiler
 import (
 	"crypto/sha256"
 	"fmt"
-	bn256 "github.com/mottla/go-R1CS-Compiler/pairing"
 	"github.com/mottla/go-R1CS-Compiler/utils"
 	"math/big"
 	"sort"
 	"strings"
 )
 
-var field = utils.NewFiniteField(bn256.Order)
 var bigZero = big.NewInt(0)
 var bigOne = big.NewInt(1)
 
@@ -48,6 +46,13 @@ func (f factor) Negate() (new factor) {
 		multiplicative: utils.Field.ArithmeticField.Neg(f.multiplicative),
 	}
 	return new
+}
+func (f factors) Negate() (new factors) {
+	new = make(factors, len(f))
+	for i, v := range f {
+		new[i] = v.Negate()
+	}
+	return
 }
 
 func (f factor) String() string {
@@ -106,7 +111,7 @@ func extractConstant(leftFactors, rightFactors factors) (gcd *big.Int, extracted
 	mulL, facL := factorSignature(leftFactors)
 	mulR, facR := factorSignature(rightFactors)
 
-	res := field.Mul(mulL, mulR)
+	res := utils.Field.ArithmeticField.Mul(mulL, mulR)
 
 	return res, facL, facR
 }
@@ -120,7 +125,7 @@ func factorSignature(facs factors) (gcd *big.Int, extractedRightFactors factors)
 
 func (fact factors) scalarMultiplyFactors(x *big.Int) (result factors) {
 	for _, left := range fact {
-		left.multiplicative = field.Mul(left.multiplicative, x)
+		left.multiplicative = utils.Field.ArithmeticField.Mul(left.multiplicative, x)
 	}
 	return fact
 }
@@ -140,21 +145,21 @@ func mulFactors(leftFactors, rightFactors factors) (result factors) {
 		for _, right := range rightFactors {
 
 			if left.Typ.Type == DecimalNumberToken && right.Typ.Type&IN != 0 {
-				leftFactors[i] = factor{Typ: right.Typ, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
-				//leftFactors[i] = &factor{Typ: right.Typ, multiplicative: field.MulNaive(right.multiplicative, left.multiplicative)}
+				leftFactors[i] = factor{Typ: right.Typ, multiplicative: utils.Field.ArithmeticField.Mul(right.multiplicative, left.multiplicative)}
+				//leftFactors[i] = &factor{Typ: right.Typ, multiplicative: utils.Field.ArithmeticField.MulNaive(right.multiplicative, left.multiplicative)}
 				continue
 			}
 
 			if left.Typ.Type&IN != 0 && right.Typ.Type == DecimalNumberToken {
-				leftFactors[i] = factor{Typ: left.Typ, multiplicative: field.Mul(right.multiplicative, left.multiplicative)}
-				//leftFactors[i] = &factor{Typ: left.Typ, multiplicative: field.MulNaive(right.multiplicative, left.multiplicative)}
+				leftFactors[i] = factor{Typ: left.Typ, multiplicative: utils.Field.ArithmeticField.Mul(right.multiplicative, left.multiplicative)}
+				//leftFactors[i] = &factor{Typ: left.Typ, multiplicative: utils.Field.ArithmeticField.MulNaive(right.multiplicative, left.multiplicative)}
 				continue
 			}
 
 			if right.Typ.Type&left.Typ.Type == DecimalNumberToken {
-				res := field.Mul(right.multiplicative, left.multiplicative)
+				res := utils.Field.ArithmeticField.Mul(right.multiplicative, left.multiplicative)
 				leftFactors[i] = factor{Typ: Token{Type: DecimalNumberToken, Identifier: res.String()}, multiplicative: res}
-				//res := field.MulNaive(right.multiplicative, left.multiplicative)
+				//res := utils.Field.ArithmeticField.MulNaive(right.multiplicative, left.multiplicative)
 				//leftFactors[i] = &factor{Typ: Token{Type: DecimalNumberToken, identifier: res.String()}, multiplicative: res}
 				continue
 
@@ -165,7 +170,7 @@ func mulFactors(leftFactors, rightFactors factors) (result factors) {
 			//if right.Typ.Type&left.Typ.Type&IN != 0 {
 			//	if left.Typ.identifier == right.Typ.identifier {
 			//		if right.invert != left.invert {
-			//			leftFactors[i] = &factor{Typ: Token{Type: DecimalNumberToken}, multiplicative: field.MulNaive(right.multiplicative, left.multiplicative)}
+			//			leftFactors[i] = &factor{Typ: Token{Type: DecimalNumberToken}, multiplicative: utils.Field.ArithmeticField.MulNaive(right.multiplicative, left.multiplicative)}
 			//			continue
 			//		}
 			//	}
@@ -183,8 +188,8 @@ func mulFactors(leftFactors, rightFactors factors) (result factors) {
 //adds two factors to one iff they are both are constants or of the same variable
 func addFactor(facLeft, facRight factor) (couldAdd bool, sum factor) {
 	if facLeft.Typ.Type&facRight.Typ.Type == DecimalNumberToken {
-		//res := field.Add(facLeft.multiplicative, facRight.multiplicative)
-		res := field.Add(facLeft.multiplicative, facRight.multiplicative)
+		//res := utils.Field.ArithmeticField.Add(facLeft.multiplicative, facRight.multiplicative)
+		res := utils.Field.ArithmeticField.Add(facLeft.multiplicative, facRight.multiplicative)
 		return true, factor{Typ: Token{
 			Type:       DecimalNumberToken,
 			Identifier: res.String(),
@@ -193,7 +198,7 @@ func addFactor(facLeft, facRight factor) (couldAdd bool, sum factor) {
 	}
 
 	if facLeft.Typ.Type == facRight.Typ.Type && facLeft.Typ.Identifier == facRight.Typ.Identifier {
-		return true, factor{Typ: facRight.Typ, multiplicative: field.Add(facLeft.multiplicative, facRight.multiplicative)}
+		return true, factor{Typ: facRight.Typ, multiplicative: utils.Field.ArithmeticField.Add(facLeft.multiplicative, facRight.multiplicative)}
 
 	}
 	//panic("unexpected")
@@ -245,7 +250,7 @@ func addFactors(leftFactors, rightFactors factors) factors {
 }
 func negateFactors(leftFactors factors) factors {
 	for i := range leftFactors {
-		//leftFactors[i].multiplicative = field.Neg(leftFactors[i].multiplicative)
+		//leftFactors[i].multiplicative = utils.Field.ArithmeticField.Neg(leftFactors[i].multiplicative)
 		leftFactors[i].multiplicative = leftFactors[i].multiplicative.Neg(leftFactors[i].multiplicative)
 		if leftFactors[i].Typ.Type == DecimalNumberToken {
 			leftFactors[i].Typ.Identifier = leftFactors[i].multiplicative.String()
@@ -263,7 +268,7 @@ func (fac factors) bitComplexity() (res int) {
 func invertFactors(leftFactors factors) factors {
 	leftFactors = leftFactors.clone()
 	for i := range leftFactors {
-		leftFactors[i].multiplicative = field.Inverse(leftFactors[i].multiplicative)
+		leftFactors[i].multiplicative = utils.Field.ArithmeticField.Inverse(leftFactors[i].multiplicative)
 		if leftFactors[i].Typ.Type == DecimalNumberToken {
 			leftFactors[i].Typ.Identifier = leftFactors[i].multiplicative.String()
 		}
@@ -326,36 +331,36 @@ func combineFunctions(operation string, a, b *function) *function {
 			f := factor{
 				Typ: Token{
 					Type:       DecimalNumberToken,
-					Identifier: field.Mul(a.value, b.value).String(),
+					Identifier: utils.Field.ArithmeticField.Mul(a.value, b.value).String(),
 				},
-				multiplicative: field.Mul(a.value, b.value),
+				multiplicative: utils.Field.ArithmeticField.Mul(a.value, b.value),
 			}
 			return f.primitiveReturnfunction()
 		case "/":
 			f := factor{
 				Typ: Token{
 					Type:       DecimalNumberToken,
-					Identifier: field.Div(a.value, b.value).String(),
+					Identifier: utils.Field.ArithmeticField.Div(a.value, b.value).String(),
 				},
-				multiplicative: field.Div(a.value, b.value),
+				multiplicative: utils.Field.ArithmeticField.Div(a.value, b.value),
 			}
 			return f.primitiveReturnfunction()
 		case "-":
 			f := factor{
 				Typ: Token{
 					Type:       DecimalNumberToken,
-					Identifier: field.Sub(a.value, b.value).String(),
+					Identifier: utils.Field.ArithmeticField.Sub(a.value, b.value).String(),
 				},
-				multiplicative: field.Sub(a.value, b.value),
+				multiplicative: utils.Field.ArithmeticField.Sub(a.value, b.value),
 			}
 			return f.primitiveReturnfunction()
 		case "+":
 			f := factor{
 				Typ: Token{
 					Type:       DecimalNumberToken,
-					Identifier: field.Add(a.value, b.value).String(),
+					Identifier: utils.Field.ArithmeticField.Add(a.value, b.value).String(),
 				},
-				multiplicative: field.Add(a.value, b.value),
+				multiplicative: utils.Field.ArithmeticField.Add(a.value, b.value),
 			}
 			return f.primitiveReturnfunction()
 		default:

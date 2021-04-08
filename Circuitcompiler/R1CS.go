@@ -17,6 +17,7 @@ type R1CS struct {
 	L        []utils.Poly
 	R        []utils.Poly
 	O        []utils.Poly
+	triggers []func(witness *[]*big.Int, set *[]bool, indexMap map[string]int) bool
 }
 type R1CSSparse struct {
 	indexMap                     map[string]int
@@ -135,7 +136,7 @@ func (er1cs *R1CSTransposed) R1CSToEAP_FFT(fft *utils.FFT_PrecomputedParas, pf *
 //	return
 //}
 
-func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness utils.Poly, err error) {
+func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness []*big.Int, err error) {
 
 	witness = utils.ArrayOfBigZeros(len(r1cs.indexMap))
 	set := make([]bool, len(witness))
@@ -148,13 +149,16 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness utils.Poly, err 
 	var setWitness = func(index int, value *big.Int) {
 		witness[index] = value
 		set[index] = true
-		if bitPositions, ex := r1cs.splitmap[invIndexMap[index]]; ex {
-			for i, bit := range bitPositions {
-				witness[bit] = big.NewInt(int64(value.Bit(i)))
-				set[bit] = true
-			}
 
+		//go over the list of self triggering funktions
+		var remain []func(witness *[]*big.Int, set *[]bool, indexMap map[string]int) bool
+		for i := 0; i < len(r1cs.triggers); i++ {
+			if !(r1cs.triggers[i])(&witness, &set, r1cs.indexMap) {
+				remain = append(remain, r1cs.triggers[i])
+			}
 		}
+		r1cs.triggers = remain
+
 	}
 	setWitness(0, big.NewInt(int64(1)))
 
@@ -180,7 +184,7 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness utils.Poly, err 
 	}
 
 	sum := func(array []*big.Int) *big.Int {
-		return field.ScalarProduct(array, witness)
+		return utils.Field.ArithmeticField.ScalarProduct(array, witness)
 	}
 
 	for i := 0; i < len(r1cs.L); i++ {
@@ -217,10 +221,18 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness utils.Poly, err 
 		// (a + b + c..) (d+e*x+..)  = (F+g+..)   we solve for x
 		if len(rightUnknowns) == 1 {
 			sumleft := sum(leftKnowns)
-			if sumleft.Cmp(zero) == 0 {
+			sounOut := sum(outKnowns)
+			if sumleft.Cmp(zero) == 0 && sounOut.Cmp(zero) == 0 {
+				// 0 * a = 0
+				// a cannot be determined
 				return nil, errors.New(fmt.Sprintf("at gate %v:the summation of Lexer inputs cannot be 0 if the unknown is in R", i))
 			}
-			result := utils.Field.ArithmeticField.Div(sum(outKnowns), sumleft)
+			//if sumleft.Cmp(zero) == 0 && sounOut.Cmp(zero) != 0 {
+			//	// 0 * a = 0
+			//	// a cannot be determined
+			//	return nil, errors.New(fmt.Sprintf("at gate %v:the summation of Lexer inputs cannot be 0 if the unknown is in R", i))
+			//}
+			result := utils.Field.ArithmeticField.Div(sounOut, sumleft)
 			result = utils.Field.ArithmeticField.Sub(result, sum(rightKnowns))
 			result = utils.Field.ArithmeticField.Div(result, gatesRightInputs[rightUnknowns[0]]) //divide by a
 			setWitness(rightUnknowns[0], result)

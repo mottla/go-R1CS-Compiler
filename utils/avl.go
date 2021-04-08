@@ -394,7 +394,7 @@ func (self *AvlNode) balance() *AvlNode {
 	if self == nil {
 		return self
 	}
-	for abs(self.left.Height()-self.right.Height()) > 2 {
+	for AbsInt(self.left.Height()-self.right.Height()) > 2 {
 		if self.left.Height() > self.right.Height() {
 			self = self.rotate_right()
 		} else {

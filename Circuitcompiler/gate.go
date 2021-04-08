@@ -6,18 +6,15 @@ import (
 	"sort"
 )
 
-type gateType uint8
-
 type Gate struct {
-	gateType   gateType
 	identifier string
 	leftIns    factors //leftIns and RightIns after addition gates have been reduced. only multiplication gates remain
 	rightIns   factors
 	outIns     factors
 	//extractedConstants *big.Int
 	noNewOutput bool
-	//only for yero or one gates. they carry the information
-	isABitOf string
+
+	computeYourselfe func(witness *[]*big.Int, set *[]bool, indexMap map[string]int) bool
 }
 
 func (g Gate) String() string {
@@ -72,6 +69,16 @@ func multiplicationGate(left, right factors) (g *Gate) {
 	return
 }
 
+//ensures that either left*right=0
+func zeroConstraintGate(left, right factors) (g *Gate) {
+	g = &Gate{
+		leftIns:     left,
+		rightIns:    right,
+		noNewOutput: true,
+	}
+	return
+}
+
 // a/b = c -> a = b*c
 func divisionGate(a, b factors) (g *Gate) {
 	g = &Gate{
@@ -83,14 +90,11 @@ func divisionGate(a, b factors) (g *Gate) {
 }
 
 // (1-id)* id = 0
-func zeroOrOneGate(id, parent string) (g *Gate) {
+func zeroOrOneGate(id string) (g *Gate) {
 	one := Token{
 		Type: DecimalNumberToken,
 	}.toFactor()
-	//b := Token{
-	//	Identifier: id,
-	//}.toFactors().factorSignature()
-	//
+
 	g = &Gate{
 		leftIns: factors{one,
 			Token{
@@ -100,7 +104,6 @@ func zeroOrOneGate(id, parent string) (g *Gate) {
 		rightIns: Token{
 			Identifier: id,
 		}.toFactors(),
-		isABitOf:   parent,
 		identifier: id,
 	}
 	return

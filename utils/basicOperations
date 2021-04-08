@@ -1,3 +1,0 @@
-func asdf(value,bits){
-    return value*bits
-}

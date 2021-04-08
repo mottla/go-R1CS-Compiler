@@ -53,9 +53,9 @@ func (g *gateContainer) Add(gate *Gate) (id Token) {
 	} else {
 		//fmt.Println("saved reuse of "+gate.String())
 	}
-	id = Token{
+
+	return Token{
 		Type:       ARGUMENT,
 		Identifier: gate.ID(),
 	}
-	return id
 }

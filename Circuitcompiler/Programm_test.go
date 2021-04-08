@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/mottla/go-R1CS-Compiler/testPrograms"
 	"github.com/stretchr/testify/assert"
+	"math/big"
 
 	"testing"
 )
@@ -18,6 +19,11 @@ func iterate(fromX, toX int, call func(int)) {
 	iterate(fromX+1, toX, call)
 
 	return
+}
+func TestFunction_SPLIT(t *testing.T) {
+	n1 := new(big.Int).SetInt64(45)
+	n2 := new(big.Int).SetInt64(23426)
+	fmt.Println(n1.Xor(n1, n2))
 }
 func TestCombineInputs(t *testing.T) {
 	ctr := 0
