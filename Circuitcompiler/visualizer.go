@@ -6,7 +6,7 @@ import (
 
 func start(hub *Hub) {
 
-	code := testPrograms.TestPrograms[0]
+	code := testPrograms.TestPrograms[3]
 
 	program := Parse(code.Code, true)
 	container := program.Execute()

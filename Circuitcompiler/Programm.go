@@ -159,45 +159,66 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		}
 
 		negatedConditions := []*function{}
+		var result factors
 		for _, task := range ifElseCircuits.taskStack.data {
 			//check if the condition is static. if that is the case, and it is true, we execute
 			//the statement and return. the remaining if-else conditions are ignored
 			//else condition
 			if task.Inputs == nil || len(task.Inputs) == 0 {
 
-				fak, _, fkt := ifElseCircuits.compile(&Constraint{
+				fak, _, _ := ifElseCircuits.compile(&Constraint{
 					Output: Token{
 						Type:       FUNCTION_CALL,
 						Identifier: task.Output.Identifier,
 					},
 				}, gateCollector)
-				return fak, true, fkt
+				if result == nil {
+					return fak, true, function{}
+				}
+
+				var composed = fak.primitiveReturnfunction()
+
+				for _, negatedCondition := range negatedConditions {
+					composed = combineFunctions("*", composed, negatedCondition)
+				}
+				f, _, _ := composed.execute(gateCollector)
+
+				return addFactors(result, f), true, function{}
 			}
 			if isStat, isSat := currentCircuit.checkStaticCondition(task.Inputs[0]); isSat && isStat {
 
-				fak, _, fkt := ifElseCircuits.compile(&Constraint{
+				fak, _, _ := ifElseCircuits.compile(&Constraint{
 					Output: Token{
 						Type:       FUNCTION_CALL,
 						Identifier: task.Output.Identifier,
 					},
 				}, gateCollector)
-				return fak, true, fkt
+				if result == nil {
+					return fak, true, function{}
+				}
+				panic("not done yet")
+
+				return addFactors(fak, result), true, function{}
 			} else if !isStat {
 
 				//the condition
-				_, ret, condition := ifElseCircuits.compile(task.Inputs[0], gateCollector)
+				condition, ret, _ := ifElseCircuits.compile(task.Inputs[0], gateCollector)
 				if ret {
 					panic("cannot return")
 				}
 
 				if statement, ex := ifElseCircuits.functions[task.Output.Identifier]; ex {
+					//run whats inside the if { }
+					//if there is a return, we append the conditional to it.
+					//TODO how to handle overwrites?
 					f, r, _ := statement.execute(gateCollector)
 					if r {
-						composed := combineFunctions("*", &condition, f.primitiveReturnfunction())
+						composed := combineFunctions("*", condition.primitiveReturnfunction(), f.primitiveReturnfunction())
 						for _, negatedCondition := range negatedConditions {
 							composed = combineFunctions("*", composed, negatedCondition)
 						}
-						composed.execute(gateCollector)
+						f, _, _ = composed.execute(gateCollector)
+						result = addFactors(result, f)
 					}
 
 				} else {
@@ -212,13 +233,13 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 					Type:       DecimalNumberToken,
 					Identifier: "1",
 				}
-				negateFkt := combineFunctions("-", one.primitiveReturnfunction(), &condition)
+				negateFkt := combineFunctions("-", one.primitiveReturnfunction(), condition.primitiveReturnfunction())
 				negatedConditions = append(negatedConditions, negateFkt)
 
 			}
 
 		}
-		return nil, false, function{}
+		return result, false, function{}
 	case FUNCTION_CALL:
 		switch currentConstraint.Output.Identifier {
 		case "BREAK":
@@ -332,7 +353,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				// we now want to AND all xors
 				// so first we now that our result bit will be one or zero
 				// c1 * (1-c1) = 0
-				zg := zeroOrOneGate(xorIDs.factorSignature())
+				zg := zeroOrOneGate(argLeft.Identifier + "==" + argRight.Identifier)
 				zg.computeYourselfe = func(witness *[]*big.Int, set *[]bool, indexMap map[string]int) bool {
 					if (*set)[indexMap[argLeft.Identifier]] && (*set)[indexMap[argRight.Identifier]] {
 						l := (*witness)[indexMap[argLeft.Identifier]]
@@ -374,7 +395,61 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				gateCollector.Add(c3)
 				return c1.toFactors(), false, function{}
 			case "!=":
+				argLeft, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
+				argRight, bitsRight := currentCircuit.SPLIT(false, right, gateCollector)
 
+				xorIDs := make(factors, len(bitsRight))
+
+				for i := 0; i < len(bitsLeft); i++ {
+					// a xor b = c as arithmetic circuit (asserting that a,b \in {0,1}
+					// 2a*b = c + a + b - 1
+					xorIDs[i] = gateCollector.Add(xorGate(bitsLeft[i], bitsRight[i])).toFactor()
+				}
+
+				// we now want to AND all xors
+				// so first we now that our result bit will be one or zero
+				// c1 * (1-c1) = 0
+				zg := zeroOrOneGate(argLeft.Identifier + "!=" + argRight.Identifier)
+				zg.computeYourselfe = func(witness *[]*big.Int, set *[]bool, indexMap map[string]int) bool {
+					if (*set)[indexMap[argLeft.Identifier]] && (*set)[indexMap[argRight.Identifier]] {
+						l := (*witness)[indexMap[argLeft.Identifier]]
+						r := (*witness)[indexMap[argRight.Identifier]]
+						(*set)[indexMap[zg.ID()]] = true
+						result := int64(utils.AbsInt(l.Cmp(r)))
+						(*witness)[indexMap[zg.ID()]] = new(big.Int).SetInt64(result)
+						return true
+					}
+					return false
+				}
+
+				c1 := gateCollector.Add(zg)
+
+				//nex we now that (N - Sum_i xor_i ) * (1-b) = 0
+				// -> if b is 1, then all xors must be 1 as well
+				minusN := factor{Typ: Token{
+					Type:       DecimalNumberToken,
+					Identifier: "",
+				},
+					multiplicative: new(big.Int).SetInt64(-int64(len(xorIDs))),
+				}
+				// -N + Sum_i xor_i -> N - Sum_i xor_i
+				sumtherm := (append(xorIDs, minusN)).Negate()
+
+				gateCollector.Add(zeroConstraintGate(sumtherm, factors{Token{Type: DecimalNumberToken}.toFactor(), c1.toFactor().Negate()}))
+
+				//finally, if b =0 , then the sum over all xors is some number less then N
+				// so we need to ensure that (N - Sum_i xor_i ) * (N - Sum_i xor_i )^-1 = b
+				//
+				inverseSumtherm := gateCollector.Add(inverseGate(sumtherm))
+				//
+				var c3 = new(Gate)
+				c3.leftIns = sumtherm
+				c3.noNewOutput = true
+				//c3.rightIns = inverseSumtherm.toFactors()
+				c3.outIns = c1.toFactors()
+				c3.rightIns = inverseSumtherm.toFactors()
+				gateCollector.Add(c3)
+				return c1.toFactors(), false, function{}
 				break
 			case ">":
 

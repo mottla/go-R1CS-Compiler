@@ -1,7 +1,7 @@
 package utils
 
 import (
-	bn256 "github.com/mottla/go-R1CS-Compiler/pairing"
+	//bn256 "github.com/mottla/go-R1CS-Compiler/pairing"
 	"math"
 	"math/big"
 )
@@ -10,9 +10,9 @@ var bigZero = big.NewInt(int64(0))
 var bigOne = big.NewInt(int64(1))
 
 //Todo I dont like this pubic accessible thing here
-var Field = PrepareFields(bn256.Order)
+//var Field = PrepareFields(bn256.Order)
 
-//var Field = PrepareFields(new(big.Int).SetInt64(1009))
+var Field = PrepareFields(new(big.Int).SetInt64(13))
 
 // Transpose transposes the *big.Int matrix
 func Transpose(matrix []Poly) []Poly {

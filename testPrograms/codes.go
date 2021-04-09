@@ -41,17 +41,23 @@ var TestPrograms = []TraceCorrectnessTest{
 	{
 		Skip: false,
 		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(2345235)), big.NewInt(int64(2345235 * 2345235))},
+			Inputs: []*big.Int{big.NewInt(int64(3)), big.NewInt(int64(3)), big.NewInt(int64(3 * 7))},
 			Result: big.NewInt(int64(49)),
 		}},
 		Code: `
-	func main( x,y ) {
+	func main( x,y ,z) {
 	public{
 		x
 	}
-		SPLIT(x*x)
-		SPLIT(y*y)
-		return (x*x) == y
+		equal(call(x,y),z)
+		return 
+	}
+	func call(x,y){
+		if x != y {
+			return y
+		}else{
+			return x*7
+		}
 	}
 	
 `,
@@ -118,7 +124,7 @@ func fubunaci(a){
 }
 `},
 	{
-		Skip: false,
+		Skip: true,
 		IO: []InOut{{
 			Inputs: sudoku(),
 		}},
@@ -278,7 +284,7 @@ func main(x,y){
 	}	
 `},
 	{
-		Skip: false,
+		Skip: true,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(1))},
 		}},

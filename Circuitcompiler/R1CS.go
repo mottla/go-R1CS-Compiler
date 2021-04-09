@@ -147,12 +147,15 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness []*big.Int, err 
 	}
 
 	var setWitness = func(index int, value *big.Int) {
-		witness[index] = value
+		witness[index] = utils.Field.ArithmeticField.Affine(value)
 		set[index] = true
 
 		//go over the list of self triggering funktions
 		var remain []func(witness *[]*big.Int, set *[]bool, indexMap map[string]int) bool
 		for i := 0; i < len(r1cs.triggers); i++ {
+			//we evaluate the trigger function. if it detects, that all values are there it
+			//needs to compute some values, it does so, and returns true.
+			//from then on, we dont need it anymore and throw it away
 			if !(r1cs.triggers[i])(&witness, &set, r1cs.indexMap) {
 				remain = append(remain, r1cs.triggers[i])
 			}
@@ -204,15 +207,12 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness []*big.Int, err 
 		// (a*x + b + c..) (d+e+..) = (F+g+..)   we solve for x
 		if len(leftUnknowns) == 1 {
 			sumright := sum(rightKnowns)
-			if sumright.Cmp(zero) == 0 {
-				fmt.Println(r1cs.L[i])
-				fmt.Println(r1cs.R[i])
-				fmt.Println(r1cs.O[i])
-
-				return nil, errors.New(fmt.Sprintf("at gate %v:the summation of R inputs cannot be 0 if the unknown is in Lexer", i))
+			sumOut := sum(outKnowns)
+			if sumright.Cmp(zero) == 0 && sumOut.Cmp(zero) == 0 {
+				return nil, errors.New(fmt.Sprintf("at gate %v: the equation  x*x = 0 is does not allow to determine x", i))
 			}
 			//result := utils.Field.ArithmeticField.Sub(sum(outKnowns), new(bn256.G1).ScalarBaseMult(sum(exponentKnowns)).X())
-			result := utils.Field.ArithmeticField.Div(sum(outKnowns), sumright)
+			result := utils.Field.ArithmeticField.Div(sumOut, sumright)
 			result = utils.Field.ArithmeticField.Sub(result, sum(leftKnowns))
 			result = utils.Field.ArithmeticField.Div(result, gatesLeftInputs[leftUnknowns[0]]) //divide by a
 			setWitness(leftUnknowns[0], result)
@@ -225,7 +225,7 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness []*big.Int, err 
 			if sumleft.Cmp(zero) == 0 && sounOut.Cmp(zero) == 0 {
 				// 0 * a = 0
 				// a cannot be determined
-				return nil, errors.New(fmt.Sprintf("at gate %v:the summation of Lexer inputs cannot be 0 if the unknown is in R", i))
+				return nil, errors.New(fmt.Sprintf("at gate %v: the equation 0 * x = 0 is does not allow to determine x", i))
 			}
 			//if sumleft.Cmp(zero) == 0 && sounOut.Cmp(zero) != 0 {
 			//	// 0 * a = 0

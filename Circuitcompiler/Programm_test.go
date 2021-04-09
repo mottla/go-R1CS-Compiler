@@ -3,6 +3,7 @@ package Circuitcompiler
 import (
 	"fmt"
 	"github.com/mottla/go-R1CS-Compiler/testPrograms"
+	"github.com/mottla/go-R1CS-Compiler/utils"
 	"github.com/stretchr/testify/assert"
 	"math/big"
 
@@ -21,9 +22,9 @@ func iterate(fromX, toX int, call func(int)) {
 	return
 }
 func TestFunction_SPLIT(t *testing.T) {
-	n1 := new(big.Int).SetInt64(45)
-	n2 := new(big.Int).SetInt64(23426)
-	fmt.Println(n1.Xor(n1, n2))
+	n1 := new(big.Int).SetInt64(-1)
+	//n2 := new(big.Int).SetInt64(23426)
+	fmt.Println(utils.Field.ArithmeticField.Affine(n1))
 }
 func TestCombineInputs(t *testing.T) {
 	ctr := 0
@@ -55,9 +56,9 @@ func TestCorrectness(t *testing.T) {
 		r1cs := program.GatesToR1CS(gates)
 		fmt.Printf("number of gates %v, witness length %v \n ", r1cs.NumberOfGates, r1cs.WitnessLength)
 
-		//fmt.Println(r1cs.L)
-		//fmt.Println(r1cs.R)
-		//fmt.Println(r1cs.O)
+		fmt.Println(r1cs.L)
+		fmt.Println(r1cs.R)
+		fmt.Println(r1cs.O)
 
 		for _, io := range test.IO {
 			inputs := CombineInputs(program.GetMainCircuit().Inputs, io.Inputs)

@@ -248,15 +248,19 @@ func addFactors(leftFactors, rightFactors factors) factors {
 	}
 	return res
 }
-func negateFactors(leftFactors factors) factors {
-	for i := range leftFactors {
+func negateFactors(in factors) (r factors) {
+	r = make(factors, len(in))
+	for i := range in {
 		//leftFactors[i].multiplicative = utils.Field.ArithmeticField.Neg(leftFactors[i].multiplicative)
-		leftFactors[i].multiplicative = leftFactors[i].multiplicative.Neg(leftFactors[i].multiplicative)
-		if leftFactors[i].Typ.Type == DecimalNumberToken {
-			leftFactors[i].Typ.Identifier = leftFactors[i].multiplicative.String()
+		r[i].multiplicative = utils.Field.ArithmeticField.Neg(in[i].multiplicative)
+		r[i].Typ = Token{
+			Type:       in[i].Typ.Type,
+			Identifier: in[i].Typ.Identifier}
+		if in[i].Typ.Type == DecimalNumberToken {
+			r[i].Typ.Identifier = r[i].multiplicative.String()
 		}
 	}
-	return leftFactors
+	return r
 }
 func (fac factors) bitComplexity() (res int) {
 	for _, i := range fac {
