@@ -17,7 +17,7 @@ type R1CS struct {
 	L        []utils.Poly
 	R        []utils.Poly
 	O        []utils.Poly
-	triggers []func(witness *[]*big.Int, set *[]bool, indexMap map[string]int) bool
+	triggers []func(witness *[]*big.Int, set utils.FastBool, indexMap map[string]int) bool
 }
 type R1CSSparse struct {
 	indexMap                     map[string]int
@@ -139,7 +139,7 @@ func (er1cs *R1CSTransposed) R1CSToEAP_FFT(fft *utils.FFT_PrecomputedParas, pf *
 func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness []*big.Int, err error) {
 
 	witness = utils.ArrayOfBigZeros(len(r1cs.indexMap))
-	set := make([]bool, len(witness))
+	set := utils.NewFastBool()
 
 	invIndexMap := make(map[int]string)
 	for k, v := range r1cs.indexMap {
@@ -148,15 +148,15 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness []*big.Int, err 
 
 	var setWitness = func(index int, value *big.Int) {
 		witness[index] = utils.Field.ArithmeticField.Affine(value)
-		set[index] = true
+		set.Set(index)
 
 		//go over the list of self triggering funktions
-		var remain []func(witness *[]*big.Int, set *[]bool, indexMap map[string]int) bool
+		var remain []func(witness *[]*big.Int, set utils.FastBool, indexMap map[string]int) bool
 		for i := 0; i < len(r1cs.triggers); i++ {
 			//we evaluate the trigger function. if it detects, that all values are there it
 			//needs to compute some values, it does so, and returns true.
 			//from then on, we dont need it anymore and throw it away
-			if !(r1cs.triggers[i])(&witness, &set, r1cs.indexMap) {
+			if !(r1cs.triggers[i])(&witness, set, r1cs.indexMap) {
 				remain = append(remain, r1cs.triggers[i])
 			}
 		}
@@ -176,7 +176,7 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness []*big.Int, err 
 		knowns = utils.ArrayOfBigZeros(len(array))
 		for j, val := range array {
 			if val.Cmp(zero) != 0 {
-				if !set[j] {
+				if !set.IsSet(j) {
 					unknownsAtIndices = append(unknownsAtIndices, j)
 				} else {
 					knowns[j] = val
@@ -201,7 +201,7 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness []*big.Int, err 
 		outKnowns, outUnknowns := getKnownsAndUnknowns(gatesOutputs)
 
 		if len(leftUnknowns)+len(rightUnknowns)+len(outUnknowns) > 1 {
-			return nil, errors.New(fmt.Sprintf("at gate %v:computing more then one unknown in Gate assignment is not possible", i))
+			return witness, errors.New(fmt.Sprintf("at gate %v:computing more then one unknown in Gate assignment is not possible", i))
 		}
 
 		// (a*x + b + c..) (d+e+..) = (F+g+..)   we solve for x
@@ -209,7 +209,7 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness []*big.Int, err 
 			sumright := sum(rightKnowns)
 			sumOut := sum(outKnowns)
 			if sumright.Cmp(zero) == 0 && sumOut.Cmp(zero) == 0 {
-				return nil, errors.New(fmt.Sprintf("at gate %v: the equation  x*x = 0 is does not allow to determine x", i))
+				return witness, errors.New(fmt.Sprintf("at gate %v: the equation  x*x = 0 is does not allow to determine x", i))
 			}
 			//result := utils.Field.ArithmeticField.Sub(sum(outKnowns), new(bn256.G1).ScalarBaseMult(sum(exponentKnowns)).X())
 			result := utils.Field.ArithmeticField.Div(sumOut, sumright)
@@ -225,7 +225,7 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness []*big.Int, err 
 			if sumleft.Cmp(zero) == 0 && sounOut.Cmp(zero) == 0 {
 				// 0 * a = 0
 				// a cannot be determined
-				return nil, errors.New(fmt.Sprintf("at gate %v: the equation 0 * x = 0 is does not allow to determine x", i))
+				return witness, errors.New(fmt.Sprintf("at gate %v: the equation 0 * x = 0 is does not allow to determine x", i))
 			}
 			//if sumleft.Cmp(zero) == 0 && sounOut.Cmp(zero) != 0 {
 			//	// 0 * a = 0
@@ -254,13 +254,13 @@ func CalculateTrace(r1cs *R1CS, input []InputArgument) (witness []*big.Int, err 
 		outKnowns, outUnknowns = getKnownsAndUnknowns(gatesOutputs)
 
 		if len(leftUnknowns)+len(rightUnknowns)+len(outUnknowns) != 0 {
-			return nil, errors.New(fmt.Sprintf("at gate %v some unknowns remain", i))
+			return witness, errors.New(fmt.Sprintf("at gate %v some unknowns remain", i))
 
 		}
 		//now check if the gate is satisfiable
 		result := utils.Field.ArithmeticField.Mul(sum(rightKnowns), sum(leftKnowns))
 		if result.Cmp(sum(outKnowns)) != 0 {
-			return nil, errors.New(fmt.Sprintf("at equality gate %v there is unequality. %v != %v .We cannot process", i, result.String(), sum(outKnowns).String()))
+			return witness, errors.New(fmt.Sprintf("at equality gate %v there is unequality. %v != %v .We cannot process", i, result.String(), sum(outKnowns).String()))
 		}
 
 	}

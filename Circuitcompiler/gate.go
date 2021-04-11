@@ -2,6 +2,7 @@ package Circuitcompiler
 
 import (
 	"fmt"
+	"github.com/mottla/go-R1CS-Compiler/utils"
 	"math/big"
 	"sort"
 )
@@ -14,7 +15,7 @@ type Gate struct {
 	//extractedConstants *big.Int
 	noNewOutput bool
 
-	computeYourselfe func(witness *[]*big.Int, set *[]bool, indexMap map[string]int) bool
+	computeYourselfe func(witness *[]*big.Int, set utils.FastBool, indexMap map[string]int) bool
 }
 
 func (g Gate) String() string {
@@ -110,24 +111,20 @@ func zeroOrOneGate(id string) (g *Gate) {
 }
 
 // a xor b = c as arithmetic circuit (asserting that a,b \in {0,1}
-// 2a*b = c + a + b - 1
+// 2a*b =  a + b - c
 func xorGate(a, b factor) (g *Gate) {
-	one := factor{
-		Typ: Token{
-			Type: DecimalNumberToken,
-		},
-		multiplicative: new(big.Int).SetInt64(1),
-	}
-	var mGate = new(Gate)
 
-	mGate.leftIns = factors{a.SetMultiplicative(new(big.Int).SetInt64(2))}
+	var mGate = new(Gate)
+	//some dangerous stuff is happening here.. check later dude
+	mGate.leftIns = factors{a.CopyAndSetMultiplicative(new(big.Int).Mul(a.multiplicative, big.NewInt(2)))}
 	mGate.rightIns = factors{b}
-	mGate.outIns = factors{one.Negate(), a, b}
+	mGate.outIns = addFactors(factors{a}, factors{b})
 
 	xor := factor{
-		Typ: Token{Identifier: mGate.ID()},
+		Typ:            Token{Identifier: mGate.ID()},
+		multiplicative: bigOne,
 	}
-	mGate.outIns = append(mGate.outIns, xor)
+	mGate.outIns = append(mGate.outIns, xor.Negate())
 
 	return mGate
 }

@@ -41,25 +41,17 @@ var TestPrograms = []TraceCorrectnessTest{
 	{
 		Skip: false,
 		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(3)), big.NewInt(int64(3)), big.NewInt(int64(3 * 7))},
+			Inputs: []*big.Int{big.NewInt(int64(4)), big.NewInt(int64(4))},
 			Result: big.NewInt(int64(49)),
 		}},
 		Code: `
-	func main( x,y ,z) {
+	func main( x,y) {
 	public{
 		x
+	}	
+
+		return (x==y)
 	}
-		equal(call(x,y),z)
-		return 
-	}
-	func call(x,y){
-		if x != y {
-			return y
-		}else{
-			return x*7
-		}
-	}
-	
 `,
 	},
 	{

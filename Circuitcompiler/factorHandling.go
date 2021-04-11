@@ -33,12 +33,11 @@ func (f factors) Less(i, j int) bool {
 	}
 	return true
 }
-func (f factor) SetMultiplicative(v *big.Int) (new factor) {
-	new = factor{
+func (f factor) CopyAndSetMultiplicative(v *big.Int) (n factor) {
+	return factor{
 		Typ:            f.Typ,
-		multiplicative: v,
+		multiplicative: new(big.Int).Set(v),
 	}
-	return new
 }
 func (f factor) Negate() (new factor) {
 	new = factor{
@@ -62,10 +61,15 @@ func (f factor) String() string {
 	return fmt.Sprintf("(\"%s\"  fac: %v)", str, f.multiplicative)
 }
 
+func (f factor) clone() (res factor) {
+	return factor{multiplicative: new(big.Int).Set(f.multiplicative), Typ: f.Typ}
+
+}
+
 func (f factors) clone() (res factors) {
 	res = make(factors, len(f))
 	for k, v := range f {
-		res[k] = factor{multiplicative: new(big.Int).Set(v.multiplicative), Typ: v.Typ}
+		res[k] = v.clone()
 	}
 	return
 }
@@ -201,7 +205,7 @@ func addFactor(facLeft, facRight factor) (couldAdd bool, sum factor) {
 		return true, factor{Typ: facRight.Typ, multiplicative: utils.Field.ArithmeticField.Add(facLeft.multiplicative, facRight.multiplicative)}
 
 	}
-	//panic("unexpected")
+
 	return false, factor{}
 
 }

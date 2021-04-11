@@ -56,13 +56,13 @@ func (t Token) toFactor() factor {
 var decimalNumberTokens = "0123456789"
 var hexTokens = "0123456789abcdefABCDEF"
 var syntaxTokens = "():,;\n{}[]"
-var operationTokens = "=-+*/&|><!"
+var operationTokens = "=-+*/&|><!^"
 var commentToken = '#'
 
-var assignmentOperator = []string{"=", "-=", "+=", "*=", "/="}
-var arithmeticOperator = []string{"-", "+", "*", "/"}
+var assignmentOperator = []string{"="}
+var arithmeticOperator = []string{"-", "+", "*", "/", "**"}
 var booleanOperator = []string{"||", "&&"}
-var bitOperator = []string{">>", "<<"}
+var bitOperator = []string{">>", "<<", "<<<", ">>>", "|", "^", "&"}
 var binaryComperator = []string{"==", "!=", ">", ">=", "<", "<="}
 
 //var unaryOperator = []string{"++", "--"}
@@ -383,6 +383,9 @@ func isLetter(ch rune) bool {
 func isDecimalDigit(ch rune) bool {
 	return (ch >= '0' && ch <= '9')
 }
+func isOperator(ch rune) bool {
+	return strings.ContainsRune(operationTokens, ch)
+}
 
 func DecimalNumberState(l *Lexer) StateFunc {
 	l.Take(decimalNumberTokens)
@@ -454,18 +457,14 @@ func IdentState(l *Lexer) StateFunc {
 		return ProbablyWhitespaceState
 	}
 
-	//look if its a operators that has two runes (==,+=,..)
-	if val, ex := operationMap[l.PeekTwo()]; ex {
-		l.Next()
-		l.Next()
-		l.Emit(val)
-		return ProbablyWhitespaceState
-	}
-
-	if val, ex := operationMap[string(peek)]; ex {
-		l.Next()
-		l.Emit(val)
-		return ProbablyWhitespaceState
+	if isOperator(peek) {
+		l.Take(operationTokens)
+		if val, ex := operationMap[l.Current()]; ex {
+			l.Emit(val)
+			return ProbablyWhitespaceState
+		} else {
+			l.Error("invalid operator")
+		}
 	}
 
 	if peek == commentToken {

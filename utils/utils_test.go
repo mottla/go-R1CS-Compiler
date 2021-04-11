@@ -1,6 +1,9 @@
 package utils
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestNextPowerOfTwo(t *testing.T) {
 	for i := 0; i < 63; i++ {
@@ -27,4 +30,9 @@ func TestAddicity(t *testing.T) {
 			t.Error("err")
 		}
 	}
+}
+
+func TestMod(t *testing.T) {
+	fmt.Println(Mod(-3, 16))
+	fmt.Println(-3 % 16)
 }

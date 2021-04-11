@@ -12,7 +12,7 @@ var bigOne = big.NewInt(int64(1))
 //Todo I dont like this pubic accessible thing here
 //var Field = PrepareFields(bn256.Order)
 
-var Field = PrepareFields(new(big.Int).SetInt64(13))
+var Field = PrepareFields(new(big.Int).SetInt64(103))
 
 // Transpose transposes the *big.Int matrix
 func Transpose(matrix []Poly) []Poly {
@@ -146,4 +146,31 @@ func ExtendArrayWithZeros(in []*big.Int, desiredLength int) []*big.Int {
 func Abs(n int) (val int, positive bool) {
 	y := n >> 63
 	return (n ^ y) - y, y == 0
+}
+
+type FastBool struct {
+	val *big.Int
+}
+
+func NewFastBool() FastBool {
+	return FastBool{val: new(big.Int)}
+}
+
+func (fb FastBool) Set(pos int) {
+	fb.val.SetBit(fb.val, pos, 1)
+}
+func (fb FastBool) IsSet(pos int) bool {
+	if fb.val.Bit(pos) == 1 {
+		return true
+	}
+	return false
+}
+
+//the go a%b return negative representants too.. that sucks so much
+func Mod(a, b int) int {
+	r := a % b
+	if r < 0 {
+		r += b
+	}
+	return r
 }

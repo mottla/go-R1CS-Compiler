@@ -7,11 +7,13 @@ import (
 
 // PolynomialField is the Polynomial over a Finite Field where the polynomial operations are performed
 type PolynomialField struct {
-	F            Fq
+	F Fq
+	//artifacts.. we used to precompute the lagrange basis polys. it turned out to be uneccessary however
 	bases        map[baseLengthPair]*AvlTree
 	basesClassic map[baseLengthPair]Poly
-	mutex        *sync.Mutex
-	fftPras      map[int]*FFT_PrecomputedParas
+
+	mutex   *sync.Mutex
+	fftPras map[int]*FFT_PrecomputedParas
 }
 
 type Poly []*big.Int

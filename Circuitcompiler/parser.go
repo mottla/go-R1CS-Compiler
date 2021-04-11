@@ -421,6 +421,9 @@ func (p *Parser) statementMode(tokens []Token) {
 	}
 }
 
+// write some pattern matcher
+// var identifier = identifier|array
+
 func ArrayStringBuild(in []int64, res string, coll *[]string) {
 	if len(in) == 0 {
 		*coll = append(*coll, res)

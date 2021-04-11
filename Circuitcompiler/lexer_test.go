@@ -26,12 +26,7 @@ func Test_LexerError2(t *testing.T) {
 	//	return  d `
 	//
 	code := `
-import "asdf"
-	func main( x  ,  z ) {
-		if 3 < 4{
-		}
-		var a = func(x){return x}
-	}
+x**4
 
 `
 

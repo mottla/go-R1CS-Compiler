@@ -55,7 +55,7 @@ func TestCorrectness(t *testing.T) {
 		fmt.Println("\n generating R1CS")
 		r1cs := program.GatesToR1CS(gates)
 		fmt.Printf("number of gates %v, witness length %v \n ", r1cs.NumberOfGates, r1cs.WitnessLength)
-
+		//
 		fmt.Println(r1cs.L)
 		fmt.Println(r1cs.R)
 		fmt.Println(r1cs.O)
@@ -73,4 +73,39 @@ func TestCorrectness(t *testing.T) {
 
 		}
 	}
+}
+
+func TestFixedBaseExponentiation(t *testing.T) {
+
+	var codeGen = func(exponent string) string {
+		return fmt.Sprintf(`
+	func main( x) {
+	public{
+		x
+	}	
+		return x**%v
+	}
+		
+`, exponent)
+	}
+
+	for i := 0; i < 10; i++ {
+		exponent, _ := utils.Field.ArithmeticField.Rand()
+		code := codeGen(exponent.String())
+
+		program := Parse(code, true)
+
+		container := program.Execute()
+		gates := container.OrderedGates()
+		r1cs := program.GatesToR1CS(gates)
+		for j := 0; j < 10; j++ {
+			base, _ := utils.Field.ArithmeticField.Rand()
+			expected := utils.Field.ArithmeticField.Exp(base, exponent)
+			inputs := CombineInputs(program.GetMainCircuit().Inputs, []*big.Int{base})
+			w, err := CalculateTrace(r1cs, inputs)
+			assert.NoError(t, err)
+			assert.Equal(t, w[len(w)-1], expected)
+		}
+	}
+
 }
