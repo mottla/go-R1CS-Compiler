@@ -54,6 +54,9 @@ func (f factors) Negate() (new factors) {
 	return
 }
 
+func (t factor) toFactors() factors {
+	return factors{t}
+}
 func (f factor) String() string {
 
 	str := f.Typ.Identifier

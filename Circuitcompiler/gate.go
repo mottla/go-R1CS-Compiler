@@ -129,6 +129,25 @@ func xorGate(a, b factor) (g *Gate) {
 	return mGate
 }
 
+// a or b = c as arithmetic circuit (asserting that a,b \in {0,1}
+// a*b =  a + b - c
+func orGate(a, b factor) (g *Gate) {
+
+	var mGate = new(Gate)
+
+	mGate.leftIns = factors{a}
+	mGate.rightIns = factors{b}
+	mGate.outIns = addFactors(factors{a}, factors{b})
+
+	xor := factor{
+		Typ:            Token{Identifier: mGate.ID()},
+		multiplicative: bigOne,
+	}
+	mGate.outIns = append(mGate.outIns, xor.Negate())
+
+	return mGate
+}
+
 //left * 1 = right
 func equalityGate(left, right factors) (g *Gate) {
 	one := Token{

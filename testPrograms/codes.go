@@ -41,7 +41,7 @@ var TestPrograms = []TraceCorrectnessTest{
 	{
 		Skip: false,
 		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(4)), big.NewInt(int64(4))},
+			Inputs: []*big.Int{big.NewInt(int64(3)), big.NewInt(int64(2))},
 			Result: big.NewInt(int64(49)),
 		}},
 		Code: `
@@ -50,7 +50,7 @@ var TestPrograms = []TraceCorrectnessTest{
 		x
 	}	
 
-		return (x==y)
+		return (x|y)*7
 	}
 `,
 	},

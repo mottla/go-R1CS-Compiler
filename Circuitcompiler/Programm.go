@@ -476,7 +476,34 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 					currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
 				}
 				return eq.toFactors(), false, function{}
+			case "&": //bitwise and
+				_, _, andIDs := currentCircuit.and(currentConstraint, gateCollector)
 
+				bitsScaled := make(factors, len(andIDs))
+				for i, v := range andIDs {
+					bitsScaled[i] = v.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
+				}
+				eq := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
+
+				//say we split var x, from now on we can call x[i] to get the i'th bit
+				for i, v := range andIDs {
+					currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
+				}
+				return eq.toFactors(), false, function{}
+			case "|": //bitwise or
+				_, _, andIDs := currentCircuit.or(currentConstraint, gateCollector)
+
+				bitsScaled := make(factors, len(andIDs))
+				for i, v := range andIDs {
+					bitsScaled[i] = v.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
+				}
+				eq := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
+
+				//say we split var x, from now on we can call x[i] to get the i'th bit
+				for i, v := range andIDs {
+					currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
+				}
+				return eq.toFactors(), false, function{}
 			}
 			break
 		case BooleanOperatorToken:
@@ -687,6 +714,37 @@ func (currentCircuit *function) xor(currentConstraint *Constraint, gateCollector
 	return argLeft, argRight, xorIDs
 }
 
+func (currentCircuit *function) and(currentConstraint *Constraint, gateCollector *gateContainer) (argLeft, argRight Token, xorIDS factors) {
+	left := currentConstraint.Inputs[1]
+	right := currentConstraint.Inputs[2]
+
+	argLeft, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
+	argRight, bitsRight := currentCircuit.SPLIT(false, right, gateCollector)
+
+	andIDs := make(factors, len(bitsRight))
+
+	for i := len(bitsLeft) - 1; i >= 0; i-- {
+		//a*b = c
+		andIDs[i] = gateCollector.Add(multiplicationGate(bitsLeft[i].toFactors(), bitsRight[i].toFactors())).toFactor()
+	}
+	return argLeft, argRight, andIDs
+}
+func (currentCircuit *function) or(currentConstraint *Constraint, gateCollector *gateContainer) (argLeft, argRight Token, xorIDS factors) {
+	left := currentConstraint.Inputs[1]
+	right := currentConstraint.Inputs[2]
+
+	argLeft, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
+	argRight, bitsRight := currentCircuit.SPLIT(false, right, gateCollector)
+
+	orIds := make(factors, len(bitsRight))
+
+	for i := len(bitsLeft) - 1; i >= 0; i-- {
+		//ab = -c + a + b
+		orIds[i] = gateCollector.Add(orGate(bitsLeft[i], bitsRight[i])).toFactor()
+	}
+	return argLeft, argRight, orIds
+}
+
 func (currentCircuit *function) equalityGate(currentConstraint *Constraint, gateCollector *gateContainer) (facs factors, reachedReturn bool, preloadedFunction function) {
 
 	argLeft, argRight, xorIDs := currentCircuit.xor(currentConstraint, gateCollector)
@@ -713,31 +771,25 @@ func (currentCircuit *function) equalityGate(currentConstraint *Constraint, gate
 		return false
 	}
 
+	// b * (1-b) = 0
 	c1 := gateCollector.Add(zg)
 
-	//nex we now that (N - Sum_i xor_i ) * b = 0
-	// -> if b is 1, then all xors must be 1 as well
-	minusN := factor{Typ: Token{
-		Type:       DecimalNumberToken,
-		Identifier: "",
-	},
-		multiplicative: new(big.Int).SetInt64(-int64(len(xorIDs))),
-	}
-	// -N + Sum_i xor_i -> N - Sum_i xor_i
-	sumtherm := (append(xorIDs, minusN)).Negate()
-
-	gateCollector.Add(zeroConstraintGate(sumtherm, c1.toFactors()))
+	//nex we now that (Sum_i xor_i ) * (b) = 0
+	// -> if b is 1, then all xors must be 0 as well
+	gateCollector.Add(zeroConstraintGate(xorIDs, c1.toFactors()))
 
 	//finally, if b =0 , then the sum over all xors is some number less then N
 	// so we need to ensure that (N - Sum_i xor_i ) * (N - Sum_i xor_i )^-1 = 1-b
 	//
-	inverseSumtherm := gateCollector.Add(inverseGate(sumtherm))
+	inverseSumtherm := gateCollector.Add(inverseGate(xorIDs))
 	//
 	var c3 = new(Gate)
-	c3.leftIns = sumtherm
+	c3.leftIns = xorIDs
 	c3.noNewOutput = true
 
-	c3.outIns = factors{Token{Type: DecimalNumberToken}.toFactor(), c1.toFactor().Negate()}
+	c3.outIns = factors{Token{
+		Type: DecimalNumberToken,
+	}.toFactor(), c1.toFactor().Negate()}
 
 	c3.rightIns = inverseSumtherm.toFactors()
 	gateCollector.Add(c3)
