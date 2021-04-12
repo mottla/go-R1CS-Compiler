@@ -12,7 +12,7 @@ var bigOne = big.NewInt(int64(1))
 //Todo I dont like this pubic accessible thing here
 //var Field = PrepareFields(bn256.Order)
 
-var Field = PrepareFields(new(big.Int).SetInt64(103))
+var Field = PrepareFields(new(big.Int).SetInt64(1009))
 
 // Transpose transposes the *big.Int matrix
 func Transpose(matrix []Poly) []Poly {

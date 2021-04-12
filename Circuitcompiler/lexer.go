@@ -99,12 +99,19 @@ func init() {
 		"func":   FUNCTION_DEFINE,
 		"import": IMPORT,
 		"public": PUBLIC,
+		"field":  FIELD,
+		"bool":   BOOL,
+		"u8":     U8,
+		"u16":    U16,
+		"u32":    U32,
+		"u64":    U64,
 	}
 
 }
 
 var Operator = BinaryComperatorToken | ArithmeticOperatorToken | BooleanOperatorToken | BitOperatorToken | AssignmentOperatorToken
 var IN = IDENTIFIER_VARIABLE | ARGUMENT | VARIABLE_DECLARE | UNASIGNEDVAR
+var Type = BOOL | U8 | U16 | U32 | U64
 
 const (
 	DecimalNumberToken TokenType = 1 << iota
@@ -135,6 +142,12 @@ const (
 	NESTED_STATEMENT_END
 	IF_ELSE_CHAIN_END
 	RETURN
+	FIELD
+	BOOL
+	U8
+	U16
+	U32
+	U64
 )
 
 func (ch TokenType) String() string {
@@ -190,6 +203,18 @@ func (ch TokenType) String() string {
 		return "arrayDefine"
 	case PUBLIC:
 		return "public"
+	case FIELD:
+		return "field type"
+	case BOOL:
+		return "boolean type"
+	case U8:
+		return "8 bit type"
+	case U16:
+		return "16 bit type"
+	case U32:
+		return "32 bit type"
+	case U64:
+		return "64 bit type"
 
 	default:
 		panic("unknown TOken")

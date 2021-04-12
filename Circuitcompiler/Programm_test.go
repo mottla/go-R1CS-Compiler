@@ -22,9 +22,10 @@ func iterate(fromX, toX int, call func(int)) {
 	return
 }
 func TestFunction_SPLIT(t *testing.T) {
-	n1 := new(big.Int).SetInt64(-1)
-	//n2 := new(big.Int).SetInt64(23426)
-	fmt.Println(utils.Field.ArithmeticField.Affine(n1))
+
+	a, b := uint8(34), uint8(210)
+	fmt.Println(a * b)
+
 }
 func TestCombineInputs(t *testing.T) {
 	ctr := 0
@@ -75,6 +76,7 @@ func TestCorrectness(t *testing.T) {
 	}
 }
 
+//seems to have trouble when the field size is to small
 func TestFixedBaseExponentiation(t *testing.T) {
 
 	var codeGen = func(exponent string) string {

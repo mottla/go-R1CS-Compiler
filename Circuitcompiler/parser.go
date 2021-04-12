@@ -338,6 +338,8 @@ func (p *Parser) statementMode(tokens []Token) {
 		p.constraintChan <- varConst
 		p.statementMode(r)
 		return
+	case BOOL:
+
 	case VARIABLE_DECLARE:
 		l, r := splitTokensAtFirstString(tokens, "\n")
 		if r != nil && r[0].Identifier != "\n" {

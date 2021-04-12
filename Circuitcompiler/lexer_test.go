@@ -26,7 +26,7 @@ func Test_LexerError2(t *testing.T) {
 	//	return  d `
 	//
 	code := `
-x**4
+ var a u64
 
 `
 
