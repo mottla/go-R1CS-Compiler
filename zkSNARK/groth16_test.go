@@ -116,7 +116,7 @@ func TestGenerateAndVerifyProof_FFT(t *testing.T) {
 //		assert.NoError(t, err)
 //
 //		for _, io := range test.IO {
-//			inputs := Circuitcompiler.CombineInputs(program.PublicInputs, io.ArgumentIdentifiers)
+//			inputs := Circuitcompiler.CombineInputs(program.PublicInputs, io.InputIdentifiers)
 //			w, err := Circuitcompiler.CalculateTrace_sparse(r1cs, inputs)
 //
 //			assert.NoError(t, err)
@@ -196,7 +196,7 @@ func TestGenerateAndVerifyProof_FFT(t *testing.T) {
 //		assert.NoError(t, erro)
 //
 //		for _, io := range test.IO {
-//			inputs := Circuitcompiler.CombineInputs(program.PublicInputs, io.ArgumentIdentifiers)
+//			inputs := Circuitcompiler.CombineInputs(program.PublicInputs, io.InputIdentifiers)
 //			w, err := Circuitcompiler.CalculateTrace(r1cs, inputs)
 //			assert.NoError(t, err)
 //			wsparse, werr := Circuitcompiler.CalculateTrace_sparse(r1csSparse, inputs)

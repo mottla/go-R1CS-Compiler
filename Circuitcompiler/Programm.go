@@ -67,7 +67,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 
 		if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); ex {
 
-			if len(f.ArgumentIdentifiers) == 0 {
+			if len(f.InputIdentifiers) == 0 {
 				return f.execute(gateCollector)
 			}
 			return rets(nil, *f), false
@@ -153,8 +153,8 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				assign = bund[i].facs.primitiveReturnfunction()
 			}
 			//overwrite
-			if !context.hasEqualDescription(assign) {
-				panic("cannot assign")
+			if eq, err := context.functions[toOverloadIdentifier].hasEqualDescription(assign); !eq {
+				panic(err)
 			}
 			context.functions[toOverloadIdentifier] = assign
 		}
@@ -835,10 +835,6 @@ type MultiplicationGateSignature struct {
 	commonExtracted *big.Int //if the multiplicationGate had a extractable factor, it will be stored here
 }
 
-func (m MultiplicationGateSignature) String() string {
-	return fmt.Sprintf("%s extracted %v", m.identifier.String(), m.commonExtracted)
-}
-
 type Program struct {
 	globalFunction *function
 	PublicInputs   []string
@@ -846,7 +842,7 @@ type Program struct {
 
 func newProgram() (program *Program) {
 	program = &Program{
-		globalFunction: newCircuit("global", nil),
+		globalFunction: NewCircuit("global", nil),
 		PublicInputs:   []string{"1"},
 	}
 	return
@@ -917,7 +913,7 @@ func (p *Program) GatesToR1CS(mGates []*Gate) (r1CS *R1CS) {
 	for _, v := range p.PublicInputs {
 		indexMap[v] = len(indexMap)
 	}
-	for _, v := range p.GetMainCircuit().ArgumentIdentifiers {
+	for _, v := range p.GetMainCircuit().InputIdentifiers {
 		if _, ex := indexMap[v]; ex {
 			continue
 		}

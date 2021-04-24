@@ -57,7 +57,7 @@ func TestCombineInputs(t *testing.T) {
 //		//fmt.Println(r1cs.O)
 //
 //		for _, io := range test.IO {
-//			inputs := CombineInputs(program.GetMainCircuit().ArgumentIdentifiers, io.Inputs)
+//			inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, io.Inputs)
 //
 //			fmt.Println("input")
 //			fmt.Println(inputs)
@@ -98,7 +98,7 @@ func TestCombineInputs(t *testing.T) {
 //		for j := 0; j < 10; j++ {
 //			base, _ := utils.Field.ArithmeticField.Rand()
 //			expected := utils.Field.ArithmeticField.Exp(base, exponent)
-//			inputs := CombineInputs(program.GetMainCircuit().ArgumentIdentifiers, []*big.Int{base})
+//			inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, []*big.Int{base})
 //			w, err := CalculateTrace(r1cs, inputs)
 //			assert.NoError(t, err)
 //			assert.Equal(t, w[len(w)-1], expected)

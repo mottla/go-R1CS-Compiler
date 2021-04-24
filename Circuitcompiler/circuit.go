@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
+	"strings"
 )
 
 var variableIndicationSign = "@"
@@ -12,7 +13,7 @@ var variableIndicationSign = "@"
 type function struct {
 	Name string
 
-	ArgumentIdentifiers    []returnTypes //the inputs of a circuit are circuits. Tis way we can pass functions as arguments
+	InputIdentifiers       []string //the inputs of a circuit are circuits. Tis way we can pass functions as arguments
 	SNARK_Public_Statement []string
 	Inputs                 []returnTypes
 	Outputs                []returnTypes
@@ -33,99 +34,47 @@ type returnTypes struct {
 	typ            Token
 }
 
-func newCircuit(name string, context *function) *function {
-
-	c := &function{Context: context, Name: name, ArgumentIdentifiers: []string{}, taskStack: newWatchstack(), functions: make(map[string]*function)}
-
-	return c
-}
 func NewCircuit(name string, context *function) *function {
 	return &function{
-		Name:                name,
-		ArgumentIdentifiers: []string{},
-		Outputs:             []returnTypes{},
-		Inputs:              []returnTypes{},
-		Context:             context,
-		functions:           make(map[string]*function),
-		taskStack:           newWatchstack(),
+		Name:             name,
+		InputIdentifiers: []string{},
+		Outputs:          []returnTypes{},
+		Inputs:           []returnTypes{},
+		Context:          context,
+		functions:        make(map[string]*function),
+		taskStack:        newWatchstack(),
 	}
 
 }
 
 func (this *function) description() string {
-	res := ""
-	for i := 0; i < len(this.ArgumentIdentifiers); i++ {
-		v, ex := this.functions[this.ArgumentIdentifiers[i]]
-		if !ex {
-			panic("cannot happen")
-		}
-		res += v.
-
-		if !v.hasEqualDescription(v2) {
-			return false
-		}
-
+	if this == nil {
+		return ""
 	}
-
-	for i := 0; i < len(this.Outputs); i++ {
-		l, r := this.Outputs[i], thenThat.Outputs[i]
-		if !l.functionReturn && !r.functionReturn {
-			if l.typ.Type != r.typ.Type {
-				return false
-			}
-			continue
-		}
-		if l.functionReturn && r.functionReturn {
-			if !l.fkt.hasEqualDescription(r.fkt) {
-				return false
-			}
-			continue
-		}
-		return false
+	res := "("
+	for _, v := range this.Inputs {
+		res += v.fkt.description()
+		res += v.typ.printType()
+		res += ","
 	}
+	res += ")->("
+	for _, v := range this.Outputs {
+		res += v.fkt.description()
+		res += v.typ.printType()
+		res += ","
+	}
+	res += ")"
+	return res
 }
 
-func (this *function) hasEqualDescription(thenThat *function) (answer bool) {
-	if len(this.ArgumentIdentifiers) != len(thenThat.ArgumentIdentifiers) {
-		return false
-	}
-	if len(this.Outputs) != len(thenThat.Outputs) {
-		return false
-	}
-
-	for i := 0; i < len(this.ArgumentIdentifiers); i++ {
-		v, ex := this.functions[this.ArgumentIdentifiers[i]]
-		if !ex {
-			panic("cannot happen")
-		}
-		v2, ex2 := thenThat.functions[thenThat.ArgumentIdentifiers[i]]
-		if !ex2 {
-			panic("cannot happen")
-		}
-
-		if !v.hasEqualDescription(v2) {
-			return false
-		}
-
+func (this *function) hasEqualDescription(thenThat *function) (answer bool, error string) {
+	l := this.description()
+	r := thenThat.description()
+	if strings.EqualFold(l, r) {
+		return true, ""
 	}
 
-	for i := 0; i < len(this.Outputs); i++ {
-		l, r := this.Outputs[i], thenThat.Outputs[i]
-		if !l.functionReturn && !r.functionReturn {
-			if l.typ.Type != r.typ.Type {
-				return false
-			}
-			continue
-		}
-		if l.functionReturn && r.functionReturn {
-			if !l.fkt.hasEqualDescription(r.fkt) {
-				return false
-			}
-			continue
-		}
-		return false
-	}
-	return true
+	return false, fmt.Sprintf("%v expects %v, got %v", this.Name, l, r)
 }
 
 func (currentCircuit *function) findFunctionInBloodline(identifier string) (*function, bool) {
@@ -154,11 +103,11 @@ func (circ *function) flatCopy() (clone *function) {
 	if circ == nil {
 		return nil
 	}
-	clone = newCircuit(circ.Name, circ.Context)
-	argumentIdentifiers := make([]string, len(circ.ArgumentIdentifiers))
+	clone = NewCircuit(circ.Name, circ.Context)
+	argumentIdentifiers := make([]string, len(circ.InputIdentifiers))
 
-	copy(argumentIdentifiers, circ.ArgumentIdentifiers)
-	clone.ArgumentIdentifiers = argumentIdentifiers
+	copy(argumentIdentifiers, circ.InputIdentifiers)
+	clone.InputIdentifiers = argumentIdentifiers
 
 	outputs := make([]returnTypes, len(circ.Outputs))
 	clone.Outputs = outputs
@@ -243,7 +192,7 @@ func (currentCircuit *function) checkStaticCondition(c *Constraint) (isStatic, i
 		}
 		break
 	default:
-		panic(c.Inputs[0].Output.String())
+		panic(c.Inputs[0].Output)
 
 	}
 	return true, true
@@ -311,7 +260,7 @@ func (w *watchstack) addPrimitiveReturn(tok Token) {
 }
 
 func (from Token) primitiveReturnfunction() (gives *function) {
-	rmp := newCircuit(from.Identifier, nil)
+	rmp := NewCircuit(from.Identifier, nil)
 	rmp.Outputs = []returnTypes{{
 		functionReturn: false,
 		typ:            from,
@@ -321,7 +270,7 @@ func (from Token) primitiveReturnfunction() (gives *function) {
 }
 
 func (currentCircuit *function) getFunctionInputs() (oldInputs []*function) {
-	for _, name := range currentCircuit.ArgumentIdentifiers {
+	for _, name := range currentCircuit.InputIdentifiers {
 		oldInputs = append(oldInputs, currentCircuit.functions[name])
 	}
 	return
@@ -329,22 +278,25 @@ func (currentCircuit *function) getFunctionInputs() (oldInputs []*function) {
 }
 
 func (currentCircuit *function) getsLoadedWith(newInputs []*function) (allArgumentsLoaded bool) {
-	allArgumentsLoaded = len(currentCircuit.ArgumentIdentifiers) == len(newInputs)
-	if len(currentCircuit.ArgumentIdentifiers) < len(newInputs) {
-		panic(fmt.Sprintf("%v takes %v arguments, got %v", currentCircuit.Name, len(currentCircuit.ArgumentIdentifiers), len(newInputs)))
+	allArgumentsLoaded = len(currentCircuit.InputIdentifiers) == len(newInputs)
+	if len(currentCircuit.InputIdentifiers) < len(newInputs) {
+		panic(fmt.Sprintf("%v takes %v arguments, got %v", currentCircuit.Name, len(currentCircuit.InputIdentifiers), len(newInputs)))
 	}
 	for i := 0; i < len(newInputs); i++ {
-		if v, ex := currentCircuit.functions[currentCircuit.ArgumentIdentifiers[i]]; ex {
-			if !v.hasEqualDescription(newInputs[i]) {
-				panic("assignment missmatch")
+		if v, ex := currentCircuit.functions[currentCircuit.InputIdentifiers[i]]; ex {
+			l := v.description()
+			r := newInputs[i].description()
+			if !strings.EqualFold(l, r) {
+				panic(fmt.Sprintf("%v takes %v arguments, got %v", currentCircuit.Name, l, r))
+
 			}
-			currentCircuit.functions[currentCircuit.ArgumentIdentifiers[i]] = newInputs[i]
+			currentCircuit.functions[currentCircuit.InputIdentifiers[i]] = newInputs[i]
 			continue
 		}
 		panic("cannot happen")
 
 	}
-	currentCircuit.ArgumentIdentifiers = currentCircuit.ArgumentIdentifiers[len(newInputs):]
+	currentCircuit.InputIdentifiers = currentCircuit.InputIdentifiers[len(newInputs):]
 	return
 }
 
@@ -352,7 +304,7 @@ func (currentCircuit *function) getsLoadedWith(newInputs []*function) (allArgume
 func (currentCircuit *function) resolveArrayName(id string, inputs []*Constraint) (composedName string) {
 
 	var arrayIdentifier = id
-	//if len(c.ArgumentIdentifiers) < 1 {
+	//if len(c.InputIdentifiers) < 1 {
 	//	panic("accessing array index failed")
 	//}
 	for _, in := range inputs {
@@ -385,7 +337,7 @@ func (currentCircuit *function) execute(gateCollector *gateContainer) (bundle, b
 }
 
 func (from *Constraint) primitiveReturnfunction() (gives *function) {
-	rmp := newCircuit(from.Output.Identifier, nil)
+	rmp := NewCircuit(from.Output.Identifier, nil)
 	rmp.taskStack.add(&Constraint{
 		Output: Token{
 			Type:       RETURN,

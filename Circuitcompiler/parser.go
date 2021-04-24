@@ -1,10 +1,8 @@
 package Circuitcompiler
 
 import (
-	"crypto/md5"
 	"errors"
 	"fmt"
-	"hash"
 	"io/ioutil"
 	"strconv"
 )
@@ -279,7 +277,7 @@ func (p *Parser) prepareFunctionHeader(current *function, stack []Token) {
 	if _, ex := current.functions[stack[0].Identifier]; ex {
 		p.error(fmt.Sprintf("argument: %v , is not unique ", stack[0].Identifier))
 	}
-	current.ArgumentIdentifiers = append(current.ArgumentIdentifiers, stack[0].Identifier)
+	current.InputIdentifiers = append(current.InputIdentifiers, stack[0].Identifier)
 
 	if stack[1].Type&Types != 0 {
 		//a bool
@@ -289,25 +287,28 @@ func (p *Parser) prepareFunctionHeader(current *function, stack []Token) {
 			isArgument: true,
 		}
 		//a bool[4][5]
-		if len(stack) > 2 {
-			tok.dimensions = p.loadDimension(stack[2:], []int64{})
-			tok.isArray = true
-			tok.isArgument = true
-			current.functions[stack[0].Identifier] = tok.primitiveReturnfunction()
-
-			arrayPostfixes := []string{}
-			ArrayStringBuild(tok.dimensions, "", &arrayPostfixes)
-			for _, post := range arrayPostfixes {
-				id := fmt.Sprintf("%v%v", stack[0].Identifier, post)
-				tok := Token{
-					Type:       stack[1].Type,
-					Identifier: id,
-					isArgument: true,
-				}
-				current.functions[id] = tok.primitiveReturnfunction()
-			}
-			return
-		}
+		//if len(stack) > 2 {
+		//	tok.dimensions = p.loadDimension(stack[2:], []int64{})
+		//	tok.isArray = true
+		//	tok.isArgument = true
+		//	current.functions[stack[0].Identifier] = tok.primitiveReturnfunction()
+		//
+		//	arrayPostfixes := []string{}
+		//	ArrayStringBuild(tok.dimensions, "", &arrayPostfixes)
+		//	for _, post := range arrayPostfixes {
+		//		id := fmt.Sprintf("%v%v", stack[0].Identifier, post)
+		//		tok := Token{
+		//			Type:       stack[1].Type,
+		//			Identifier: id,
+		//			isArgument: true,
+		//		}
+		//		current.functions[id] = tok.primitiveReturnfunction()
+		//	}
+		//	return
+		//}
+		current.Inputs = append(current.Outputs, returnTypes{
+			typ: tok,
+		})
 		current.functions[stack[0].Identifier] = tok.primitiveReturnfunction()
 		return
 	}
@@ -316,6 +317,10 @@ func (p *Parser) prepareFunctionHeader(current *function, stack []Token) {
 		next := NewCircuit(stack[0].Identifier, nil)
 		p.PrepareFunction(next, stack[2:])
 		current.functions[stack[0].Identifier] = next
+		current.Inputs = append(current.Outputs, returnTypes{
+			functionReturn: true,
+			fkt:            next,
+		})
 		return
 	}
 
@@ -339,12 +344,12 @@ func (p *Parser) prepareReturns(current *function, stack []Token) {
 			Type: stack[0].Type,
 		}
 		// that was array stuff
-		if len(stack) > 1 {
-			tok.dimensions = p.loadDimension(stack[2:], []int64{})
-			tok.isArray = true
-			current.functions[stack[0].Identifier] = tok.primitiveReturnfunction()
-			return
-		}
+		//if len(stack) > 1 {
+		//	tok.dimensions = p.loadDimension(stack[2:], []int64{})
+		//	tok.isArray = true
+		//	current.functions[stack[0].Identifier] = tok.primitiveReturnfunction()
+		//	return
+		//}
 
 		current.Outputs = append(current.Outputs, returnTypes{
 			typ: tok,
@@ -460,7 +465,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) (ret []
 		//we add a constraint, its name references to the function body, its inputs hold the condition
 		identifier := fmt.Sprintf("if%v", currentCircuit.taskStack.len())
 
-		ifFunction := newCircuit(identifier, currentCircuit)
+		ifFunction := NewCircuit(identifier, currentCircuit)
 		currentCircuit.functions[identifier] = ifFunction
 
 		ifConstraint := &Constraint{
@@ -490,7 +495,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) (ret []
 
 		identifier := fmt.Sprintf("else%v", currentCircuit.taskStack.len())
 
-		elseFunction := newCircuit(identifier, currentCircuit)
+		elseFunction := NewCircuit(identifier, currentCircuit)
 
 		currentCircuit.functions[identifier] = elseFunction
 
@@ -538,7 +543,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) (ret []
 		//	},
 		//}
 		//p.parseExpression(l[3:], varConst)
-		//ForConst.ArgumentIdentifiers = append(ForConst.ArgumentIdentifiers, varConst)
+		//ForConst.InputIdentifiers = append(ForConst.InputIdentifiers, varConst)
 
 		// a <5;
 		l, r := splitTokensAtFirstString(tokens[2:], ";")
@@ -727,7 +732,7 @@ func (p *Parser) loadDimension(toks []Token, in []int64) (res []int64) {
 func (p *Parser) resolveArrayName(currentCircuit *function, con *Constraint) (composedName string, arrayDimension []int64, isArray bool) {
 
 	composedName = con.Output.Identifier
-	//if len(c.ArgumentIdentifiers) < 1 {
+	//if len(c.InputIdentifiers) < 1 {
 	//	panic("accessing array index failed")
 	//}
 	for _, in := range con.Inputs {
@@ -1010,11 +1015,6 @@ type Constraint struct {
 func (c Constraint) String() string {
 	return fmt.Sprintf("|%v|", c.Output)
 }
-func (c Constraint) MD5Signature() string {
-	md5 := md5.New()
-	c.idd(md5)
-	return string(md5.Sum(nil))
-}
 
 //clone returns a deep copy of c
 func (c *Constraint) clone() *Constraint {
@@ -1025,13 +1025,6 @@ func (c *Constraint) clone() *Constraint {
 	return &Constraint{
 		Output: c.Output,
 		Inputs: in,
-	}
-}
-
-func (c Constraint) idd(h hash.Hash) {
-	h.Write([]byte(c.Output.String()))
-	for _, v := range c.Inputs {
-		v.idd(h)
 	}
 }
 

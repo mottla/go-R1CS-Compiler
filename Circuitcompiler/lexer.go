@@ -31,8 +31,11 @@ type Token struct {
 	dimensions []int64
 }
 
-func (ch Token) String() string {
-	return fmt.Sprintf("(%v <> %v)", ch.Identifier, ch.Type)
+func (ch Token) printType() string {
+	if ch.isArray {
+		fmt.Sprintf("%v[%v]", ch.Type, ch.dimensions)
+	}
+	return fmt.Sprintf("%v", ch.Type)
 }
 
 func (t *Tokens) next() (r Token) {

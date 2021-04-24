@@ -121,11 +121,6 @@ func (fac factors) factorSignature() string {
 	return h.String()[:16]
 }
 
-func extractGCD_andSignature(leftFactors factors) (sig MultiplicationGateSignature, extractedLeftFactors factors) {
-	mulL, facL := factorSignature(leftFactors)
-	return MultiplicationGateSignature{identifier: Token{Type: ARGUMENT, Identifier: facL.factorSignature()}, commonExtracted: mulL}, facL
-}
-
 func extractConstant(leftFactors, rightFactors factors) (gcd *big.Int, extractedLeftFactors, extractedRightFactors factors) {
 
 	mulL, facL := factorSignature(leftFactors)
@@ -319,7 +314,7 @@ func (from factor) primitiveReturnfunction() (gives *function) {
 	if from.multiplicative == nil || from.multiplicative.Cmp(bigOne) == 0 {
 		return from.Typ.primitiveReturnfunction()
 	}
-	rmp := newCircuit(from.Typ.Identifier, nil)
+	rmp := NewCircuit(from.Typ.Identifier, nil)
 	rmp.taskStack.add(&Constraint{
 		Output: Token{
 			Type: RETURN,
@@ -390,7 +385,7 @@ func combineFunctions(operation string, a, b *function) *function {
 	//	}
 	//}
 
-	rmp := newCircuit("", nil)
+	rmp := NewCircuit("", nil)
 	rmp.functions[a.Name] = (a)
 	rmp.functions[b.Name] = (b)
 	rmp.taskStack.add(&Constraint{

@@ -55,7 +55,8 @@ func (g *gateContainer) Add(gate *Gate) (id Token) {
 	}
 
 	return Token{
-		Type:       ARGUMENT,
+		//todo note that thats bs
+		Type:       gate.rightIns[0].Typ.Type,
 		Identifier: gate.ID(),
 	}
 }
