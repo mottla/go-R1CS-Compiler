@@ -78,8 +78,8 @@ func (h *Hub) run() {
 		case client := <-h.register:
 			fmt.Println("Client registered")
 			h.clients[client] = true
-			go start(h)
-
+			//go start(h)
+			panic("asdf")
 		case client := <-h.unregister:
 			fmt.Println("Client tries to unregister")
 			if _, ok := h.clients[client]; ok {

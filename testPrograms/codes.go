@@ -36,26 +36,21 @@ var sudoku = func() []*big.Int {
 	}
 	return res
 }
-
 var TestPrograms = []TraceCorrectnessTest{
 	{
-		Skip: false,
+		Skip: true,
 		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(3)), big.NewInt(int64(2))},
+			Inputs: []*big.Int{big.NewInt(int64(27)), big.NewInt(int64(3))},
 			Result: big.NewInt(int64(49)),
 		}},
 		Code: `
-	func main( x,y) {
-	public{
-		x
-	}	
+	func main(x,y) {
 
-		return (x|y)*7
 	}
 `,
 	},
 	{
-		Skip: true,
+		Skip: false,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(7)), big.NewInt(int64(11))},
 			Result: big.NewInt(int64(1729500084900343)),
@@ -93,7 +88,7 @@ var TestPrograms = []TraceCorrectnessTest{
 	}`,
 	},
 	{
-		Skip: true,
+		Skip: false,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(3))},
 		}},
@@ -194,7 +189,10 @@ func constraint(x){
 		}},
 		Code: `
 
-func main(x[9][9]){		
+func main(x[9][9]){	
+public{
+	x[0][0],x[5][3]
+}
 	# we check if all inputs are in the range 1 to 9
 	var i = 0
 	for (i<9;i=i+1){

@@ -38,6 +38,7 @@ func (p *Parser) nextNonBreakToken() *Token {
 		return &Token{Type: EOF}
 	}
 	for tok.Type == CommentToken {
+
 		tok = p.nextToken()
 	}
 	for tok.Identifier == "\n" {
@@ -64,363 +65,15 @@ func newParser(code string, log bool) (p *Parser) {
 	return &Parser{constraintChan: make(chan *Constraint), tokenChannel: make(chan Token), done: make(chan struct{}), lexer: lexer, log: log}
 }
 
-//read the code, check syntax and semantics, translate it into an function tree ready for execution
-func Parse(code string, checkSemantics bool) (p *Program) {
+func NewParse(code string) (p *Program) {
 
 	parser := newParser(code, false)
-
-	var constraintStack []*Constraint
 	toks := parser.stackAllTokens()
-	go parser.statementMode(toks)
-	//go parser.statementMode(parser.stackAllTokens())
 	p = newProgram()
-out:
-	for {
-		select {
-		case constraint := <-parser.constraintChan:
-			//fmt.Println("#############")
-			//fmt.Println(constraint)
-			if constraint.Output.Type == PUBLIC {
-				a := p.GetMainCircuit().resolveArrayName(constraint.Output.Identifier, constraint.Inputs)
-				p.PublicInputs = append(p.PublicInputs, a)
-			}
-			if checkSemantics {
-				constraintStack = append(constraintStack, constraint)
-			}
-		case <-parser.done:
-			break out
-		}
-	}
 
-	//p = newProgram(big.NewInt(1993), big.NewInt(1993))
-	p.globalFunction.preCompile(constraintStack)
+	parser.NEWPreCompile(p.globalFunction, toks)
+
 	return p
-}
-
-func (p *Parser) statementMode(tokens []Token) {
-
-	tokens = removeLeadingAndTrailingBreaks(tokens)
-
-	if len(tokens) == 0 {
-		return
-	}
-	if tokens[0].Type == EOF {
-		close(p.done)
-		return
-	}
-
-	switch tokens[0].Type {
-	case PUBLIC:
-		toks := Tokens{toks: tokens[1:]}
-		tok := toks.next()
-		if tok.Identifier != "{" {
-			p.error("Function expected, got %v ", tok)
-		}
-		//NOTE THAT WE GOT ERROR WHEN USING &Constraint{} instead of Constraint{}, dont understand why
-		buffer := Constraint{}
-
-		rest := p.argumentParse(toks.toks, splitAtClosingSwingBrackets, &buffer)
-		for _, publicInput := range buffer.Inputs {
-			publicInput.Output.Type = PUBLIC
-			p.constraintChan <- publicInput
-		}
-		p.statementMode(rest)
-	case IMPORT:
-		if len(tokens) == 1 || tokens[1].Type != IDENTIFIER_VARIABLE {
-			p.error("import failed")
-		}
-
-		dat, err := ioutil.ReadFile(tokens[1].Identifier)
-		if err != nil {
-			panic(err)
-		}
-		tmpParser := newParser(string(dat), false)
-		t := tmpParser.stackAllTokens()
-		//we glue em together, but remove the EOF from t first
-		p.statementMode(append(t[:len(t)-1], tokens[2:]...))
-	case FUNCTION_DEFINE:
-		toks := Tokens{toks: tokens}
-		var tok = toks.next() //func
-		tok = toks.next()     //function name
-
-		FuncConstraint := &Constraint{
-			Output: Token{Type: FUNCTION_DEFINE, Identifier: tok.Identifier},
-		}
-
-		tok = toks.next()
-		if tok.Identifier != "(" {
-			p.error("Function expected, got %v ", tok)
-		}
-
-		rest := p.argumentParse(toks.toks, splitAtClosingBrackets, FuncConstraint)
-		var FuncConstraintInputs []*Constraint
-		for _, v := range FuncConstraint.Inputs {
-
-			if v.Output.Type == ARRAY_CALL {
-				var arrayDimensions = make([]int64, len(v.Inputs))
-				var err error
-				for i, in := range v.Inputs {
-					if in.Output.Type != DecimalNumberToken {
-						p.error("Invalid array declaration in function header, got %v, expect static size", v.Inputs[0])
-					}
-					arrayDimensions[i], err = strconv.ParseInt(in.Output.Identifier, 10, 64)
-					if err != nil || arrayDimensions[i] <= 0 {
-						p.error(err.Error())
-					}
-				}
-				arrayPostfixes := []string{}
-				ArrayStringBuild(arrayDimensions, "", &arrayPostfixes)
-				for _, post := range arrayPostfixes {
-					FuncConstraintInputs = append(FuncConstraintInputs, &Constraint{
-						Output: Token{
-							Type:       ARGUMENT,
-							Identifier: fmt.Sprintf("%v%v", v.Output.Identifier, post),
-						},
-					})
-				}
-				continue
-			}
-			if v.Output.Type != IDENTIFIER_VARIABLE {
-				p.error("Invalid function header, got %v : %v", v.Output.Identifier, v.Output.Type)
-			}
-			v.Output.Type = ARGUMENT
-			FuncConstraintInputs = append(FuncConstraintInputs, v)
-		}
-		FuncConstraint.Inputs = FuncConstraintInputs
-		toks.toks = rest
-		tok = toks.next()
-		if tok.Identifier != "{" {
-			p.error("invalid function declaration, got %v : %v", tok.Identifier, tok.Type)
-		}
-		p.constraintChan <- FuncConstraint
-		l, r, b := splitAtClosingSwingBrackets(toks.toks)
-		if !b {
-			panic("closing brackets missing")
-		}
-		p.statementMode(l)
-		p.constraintChan <- &Constraint{
-			Output: Token{
-				Type: NESTED_STATEMENT_END,
-			},
-		}
-		p.statementMode(r)
-		return
-	case IF: //if a<b { }   if (a<b) {
-
-		var condition []Token
-		var success bool
-		rest := tokens
-
-		var handeFunc = func(skip int, pareseExpression bool, typ TokenType) {
-			condition, rest = splitTokensAtFirstString(rest, "{")
-			IfConst := &Constraint{Output: Token{Type: typ}}
-			if pareseExpression {
-				p.parseExpression(condition[skip:], IfConst)
-			}
-			condition, rest, success = splitAtClosingSwingBrackets(rest)
-			if !success {
-				p.error("closing } brackets missing around IF body")
-			}
-			p.constraintChan <- IfConst
-			p.statementMode(condition)
-			p.constraintChan <- &Constraint{Output: Token{Type: NESTED_STATEMENT_END}}
-		}
-
-		handeFunc(1, true, IF)
-
-		hasElseIf := false
-		for rest[0].Type == ELSE && rest[1].Type == IF {
-			handeFunc(2, true, ELSE)
-			hasElseIf = true
-		}
-
-		if rest[0].Type != ELSE && hasElseIf {
-			p.error("you used else if, so a else at the end is required")
-		}
-
-		if rest[0].Type == ELSE {
-			handeFunc(1, false, ELSE)
-		}
-		p.constraintChan <- &Constraint{Output: Token{Type: IF_ELSE_CHAIN_END}}
-
-		p.statementMode(rest)
-		return
-	case FOR:
-		// for (  a<5 ; a+=1)
-		ForConst := &Constraint{Output: Token{Type: FOR}, Inputs: []*Constraint{}}
-		var success bool
-		if tokens[1].Identifier != "(" {
-			p.error("brackets '(' missing, got %v", tokens[1])
-		}
-		// a = 4;
-		//l, r := splitTokensAtFirstString(tokens[2:], ";")
-		//if r[0].identifier != ";" {
-		//	p.error("';' expected, got %v", r[0])
-		//}
-		//r = r[1:]
-		//if b, err := isVariableAssignment(l[1:]); !b {
-		//	p.error(err)
-		//}
-		//varConst := &Constraint{
-		//	Output: Token{
-		//		Type:  VARIABLE_DECLARE,
-		//		identifier: l[1].identifier,
-		//	},
-		//}
-		//p.parseExpression(l[3:], varConst)
-		//ForConst.Inputs = append(ForConst.Inputs, varConst)
-
-		// a <5;
-		l, r := splitTokensAtFirstString(tokens[2:], ";")
-		if r[0].Identifier != ";" {
-			p.error("';' expected, got %v", r[0])
-		}
-		r = r[1:]
-		p.parseExpression(l, ForConst)
-		//a = a+1)
-		l, r, success = splitAtClosingBrackets(r)
-		if !success {
-			p.error("closing brackets missing")
-		}
-		if b, _, err := isVariableAssignment(l); !b {
-			p.error(err)
-		}
-
-		overload, expr := splitTokensAtFirstString(l, "=")
-
-		////hannes = 42
-		//if b, rem, _ := isVariableAssignment(l); b {
-		varConst := &Constraint{
-			Output: Token{
-				Type: VARIABLE_OVERLOAD,
-			},
-		}
-		p.parseExpression(overload, varConst)
-		p.parseExpression(expr[1:], varConst)
-
-		ForConst.Inputs = append(ForConst.Inputs, varConst)
-
-		p.constraintChan <- ForConst
-		r = removeLeadingBreaks(r)
-
-		if r[0].Identifier != "{" {
-			p.error("brackets '{' missing, got %v", r[0])
-		}
-		l, r, success = splitAtClosingSwingBrackets(r[1:])
-		if !success {
-			p.error("closing brackets missing")
-		}
-		p.statementMode(l)
-		p.constraintChan <- &Constraint{
-			Output: Token{
-				Type: NESTED_STATEMENT_END,
-			},
-		}
-		p.statementMode(r)
-		break
-	case IDENTIFIER_VARIABLE: //variable overloading -> a = a * 4
-		l, r := splitTokensAtFirstString(tokens, "\n")
-		if r != nil && r[0].Identifier != "\n" {
-			p.error("linebreak expected, got %v", r[0])
-		}
-
-		overload, expr := splitTokensAtFirstString(l, "=")
-
-		////hannes = 42
-		//if b, rem, _ := isVariableAssignment(l); b {
-		varConst := &Constraint{
-			Output: Token{
-				Type: VARIABLE_OVERLOAD,
-			},
-		}
-		p.parseExpression(overload, varConst)
-		p.parseExpression(expr[1:], varConst)
-		p.constraintChan <- varConst
-		p.statementMode(r)
-		return
-	case BOOL:
-
-	case VARIABLE_DECLARE:
-		l, r := splitTokensAtFirstString(tokens, "\n")
-		if r != nil && r[0].Identifier != "\n" {
-			p.error("linebreak expected, got %v", r[0])
-		}
-
-		//var x =
-		if b, rem, _ := isVariableAssignment(tokens[1:]); b {
-
-			//var a = func(){}
-			if rem[0].Type == FUNCTION_DEFINE {
-				p.statementMode(append([]Token{rem[0], tokens[1]}, rem[1:]...))
-				return
-			}
-
-			//var x = expression
-			varConst := &Constraint{
-				Output: Token{
-					Type:       VARIABLE_DECLARE,
-					Identifier: l[1].Identifier,
-				},
-			}
-			p.parseExpression(l[3:], varConst)
-			p.constraintChan <- varConst
-			p.statementMode(r)
-			return
-		}
-
-		//var hannes[] = {a,b,c,d}
-		if b, _ := isArrayAssignment(l[1:]); b {
-			arrayConst := &Constraint{
-				Output: Token{
-					Type:       ARRAY_DECLARE,
-					Identifier: l[1].Identifier,
-				},
-			}
-
-			rest := p.argumentParse(l[5:], splitAtClosingSwingBrackets, arrayConst)
-			if len(rest) > 0 {
-				panic("unexpected")
-			}
-			p.constraintChan <- arrayConst
-			p.statementMode(r)
-			return
-		}
-		//var a = func(){}
-	case RETURN:
-		//return (1+a)
-		l, r := splitTokensAtFirstString(tokens, "\n")
-		returnCOnstraint := &Constraint{
-			Output: Token{
-				Type: RETURN,
-			},
-		}
-		if len(l) > 1 {
-			p.parseExpression(l[1:], returnCOnstraint)
-		}
-
-		if len(removeLeadingAndTrailingBreaks(r)) != 0 {
-			panic("not supposed")
-		}
-		p.constraintChan <- returnCOnstraint
-		return
-	case FUNCTION_CALL:
-		//fkt(args...)    equal(a,2) -> creates assertion gates s.t. a=2
-
-		varConst := &Constraint{
-			Output: tokens[0],
-		}
-		r := p.argumentParse(tokens[1:], splitAtClosingBrackets, varConst)
-		if r != nil && r[0].Identifier != "\n" {
-			p.error("linebreak expected, got %v", r[0])
-		}
-		//r = r[1:]
-		p.constraintChan <- varConst
-		p.statementMode(r)
-		return
-
-	default:
-		p.error("return missing maybe")
-	}
 }
 
 // write some pattern matcher
@@ -518,18 +171,18 @@ func (p *Parser) parseExpression(stack []Token, constraint *Constraint) {
 		cr := &Constraint{Output: stack[0]}
 		constraint.Inputs = append(constraint.Inputs, cr)
 		restAfterBracketsClosed := p.argumentParse(stack[1:], splitAtClosingBrackets, cr)
+		//TODO  fkt(34)*7
 		if len(restAfterBracketsClosed) != 0 {
 			p.error("%v", restAfterBracketsClosed)
 		}
 		return
 	}
 
-	if stack[1].Identifier == "[" && stack[len(stack)-1].Identifier == "]" {
-		rtok := Token{
+	if stack[0].Type == IDENTIFIER_VARIABLE && stack[1].Identifier == "[" && stack[len(stack)-1].Identifier == "]" {
+		cr := &Constraint{Output: Token{
 			Type:       ARRAY_CALL,
-			Identifier: stack[0].Identifier,
+			Identifier: stack[0].Identifier},
 		}
-		cr := &Constraint{Output: rtok}
 		constraint.Inputs = append(constraint.Inputs, cr)
 
 		l, r, _ := splitAtClosingSquareBrackets(stack[2:])
@@ -537,6 +190,20 @@ func (p *Parser) parseExpression(stack []Token, constraint *Constraint) {
 		for len(r) != 0 {
 			l, r, _ = splitAtClosingSquareBrackets(r)
 			p.parseExpression(l, cr)
+		}
+		return
+	}
+	if stack[0].Identifier == "[" && stack[len(stack)-1].Identifier == "]" {
+
+		cr := &Constraint{Output: Token{
+			Type: ARRAY_DECLARE,
+		},
+		}
+		constraint.Inputs = append(constraint.Inputs, cr)
+		restAfterBracketsClosed := p.argumentParse(stack, splitAtClosingSquareBrackets, cr)
+		// [1,b,c]
+		if len(restAfterBracketsClosed) != 0 {
+			p.error("array fdsaf")
 		}
 		return
 	}
@@ -571,6 +238,549 @@ func (p *Parser) argumentParse(stack []Token, bracketSplitFunction func(in []Tok
 
 	return rem
 
+}
+
+func (p *Parser) PrepareFunction(newFunction *function, stack []Token) {
+
+	inputs, outputs, success := splitAtClosingBrackets(stack)
+	if !success {
+		p.error("closing brackets missing")
+	}
+	for arguments, remm := splitAtFirstHighestStringType(inputs, ","); ; arguments, remm = splitAtFirstHighestStringType(remm, ",") {
+		arguments = removeLeadingAndTrailingBreaks(arguments)
+		p.prepareFunctionHeader(newFunction, arguments)
+		if remm == nil {
+			break
+		}
+	}
+	outputs = stripOfBrackets(outputs)
+	for arguments, remm := splitAtFirstHighestStringType(outputs, ","); ; arguments, remm = splitAtFirstHighestStringType(remm, ",") {
+		arguments = removeLeadingAndTrailingBreaks(arguments)
+		p.prepareReturns(newFunction, arguments)
+		if remm == nil {
+			break
+		}
+	}
+
+	return
+}
+
+func (p *Parser) prepareFunctionHeader(current *function, stack []Token) {
+	if len(stack) == 0 {
+		return
+	}
+	if len(stack) == 1 {
+		p.error("need argument + type")
+	}
+
+	if stack[0].Type != IDENTIFIER_VARIABLE {
+		p.error("identifier expected")
+	}
+	if _, ex := current.functions[stack[0].Identifier]; ex {
+		p.error(fmt.Sprintf("argument: %v , is not unique ", stack[0].Identifier))
+	}
+	current.ArgumentIdentifiers = append(current.ArgumentIdentifiers, stack[0].Identifier)
+
+	if stack[1].Type&Types != 0 {
+		//a bool
+		tok := Token{
+			Type:       stack[1].Type,
+			Identifier: stack[0].Identifier,
+			isArgument: true,
+		}
+		//a bool[4][5]
+		if len(stack) > 2 {
+			tok.dimensions = p.loadDimension(stack[2:], []int64{})
+			tok.isArray = true
+			tok.isArgument = true
+			current.functions[stack[0].Identifier] = tok.primitiveReturnfunction()
+
+			arrayPostfixes := []string{}
+			ArrayStringBuild(tok.dimensions, "", &arrayPostfixes)
+			for _, post := range arrayPostfixes {
+				id := fmt.Sprintf("%v%v", stack[0].Identifier, post)
+				tok := Token{
+					Type:       stack[1].Type,
+					Identifier: id,
+					isArgument: true,
+				}
+				current.functions[id] = tok.primitiveReturnfunction()
+			}
+			return
+		}
+		current.functions[stack[0].Identifier] = tok.primitiveReturnfunction()
+		return
+	}
+	if stack[1].Type == FUNCTION_DEFINE {
+		//TODO rethink what context a function in a function header has
+		next := NewCircuit(stack[0].Identifier, nil)
+		p.PrepareFunction(current, stack[2:])
+		current.functions[stack[0].Identifier] = next
+		return
+	}
+
+	//arguments can be expressions, so we need to parse them
+	// todo what if we parse func( a func(x field,y bool)(field) , c field)
+	//then this primitive split does not work
+
+	//handle what comes after the function
+	p.error("not defined")
+	return
+
+}
+
+func (p *Parser) prepareReturns(current *function, stack []Token) {
+	if len(stack) == 0 {
+		return
+	}
+
+	if stack[0].Type&Types != 0 {
+		tok := Token{
+			Type: stack[0].Type,
+		}
+		// that was array stuff
+		if len(stack) > 1 {
+			tok.dimensions = p.loadDimension(stack[2:], []int64{})
+			tok.isArray = true
+			current.functions[stack[0].Identifier] = tok.primitiveReturnfunction()
+			return
+		}
+
+		current.Outputs = append(current.Outputs, returnTypes{
+			typ: tok,
+		})
+		return
+	}
+	if stack[1].Type == FUNCTION_DEFINE {
+		next := NewCircuit("", nil)
+		p.PrepareFunction(next, stack[2:])
+		current.Outputs = append(current.Outputs, returnTypes{
+			functionReturn: true,
+			fkt:            next,
+		})
+		return
+	}
+
+	//arguments can be expressions, so we need to parse them
+	// todo what if we parse func( a func(x field,y bool)(field) , c field)
+	//then this primitive split does not work
+
+	//handle what comes after the function
+	p.error("not defined")
+	return
+
+}
+
+func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) (ret []Token) {
+
+	tokens = removeLeadingAndTrailingBreaks(tokens)
+
+	if len(tokens) == 0 {
+		return
+	}
+	if tokens[0].Type == EOF {
+		close(p.done)
+		return
+	}
+
+	//first we re
+
+	switch tokens[0].Type {
+	case PUBLIC:
+		toks := Tokens{toks: tokens[1:]}
+		tok := toks.next()
+		if tok.Identifier != "{" {
+			p.error("define publics via: 'public {a,b,c}' , got %v ", tok)
+		}
+		//NOTE THAT WE GOT ERROR WHEN USING &Constraint{} instead of Constraint{}, dont understand why
+		buffer := Constraint{}
+
+		rest := p.argumentParse(toks.toks, splitAtClosingSwingBrackets, &buffer)
+		for _, publicInput := range buffer.Inputs {
+			a := currentCircuit.resolveArrayName(publicInput.Output.Identifier, publicInput.Inputs)
+			currentCircuit.SNARK_Public_Statement = append(currentCircuit.SNARK_Public_Statement, a)
+		}
+		p.NEWPreCompile(currentCircuit, rest)
+	case IMPORT:
+		if len(tokens) == 1 || tokens[1].Type != IDENTIFIER_VARIABLE {
+			p.error("import failed")
+		}
+
+		dat, err := ioutil.ReadFile(tokens[1].Identifier)
+		if err != nil {
+			panic(err)
+		}
+		tmpParser := newParser(string(dat), false)
+		t := tmpParser.stackAllTokens()
+		//we glue em together, but remove the EOF from t first
+		p.NEWPreCompile(currentCircuit, append(t[:len(t)-1], tokens[2:]...))
+		//TODO then?
+	case FUNCTION_DEFINE:
+		p.AssertIdentifiedType(FUNCTION_CALL, tokens[1])
+		fkt := NewCircuit(tokens[1].Identifier, currentCircuit)
+		if _, ex := currentCircuit.functions[fkt.Name]; ex {
+			p.error(fmt.Sprintf("function %s already declared", fkt.Name))
+		}
+		//we add the function
+		currentCircuit.functions[fkt.Name] = fkt
+		p.Assert("(", tokens[2])
+
+		inside, rest := splitAtFirstHighestStringType(tokens[2:], "{")
+
+		p.PrepareFunction(fkt, inside)
+
+		inside, rest, success := splitAtClosingSwingBrackets(rest)
+		if !success {
+			panic("closing brackets missing")
+		}
+
+		//we first compile whats outside the function. so
+		//this enables us, to access not yet defined functions inside
+		//the function scope
+		p.NEWPreCompile(currentCircuit, rest)
+
+		//now compile the function
+		p.NEWPreCompile(fkt, inside)
+
+		//check if the returns match the header description
+
+		ex, v := fkt.taskStack.PeekLast()
+		fktReturns := ex && v.Output.Type == RETURN
+
+		if fktReturns && len(v.Inputs) != len(fkt.Outputs) {
+			p.error("expect %v return values, got %v", len(fkt.Outputs), len(v.Inputs))
+		}
+		if !fktReturns && len(fkt.Outputs) != 0 {
+			p.error("expect %v return values, got %v", len(fkt.Outputs), len(v.Inputs))
+		}
+
+		return
+	case IF: //if a<b { }   if (a<b) {
+
+		//we add a constraint, its name references to the function body, its inputs hold the condition
+		identifier := fmt.Sprintf("if%v", currentCircuit.taskStack.len())
+
+		ifFunction := newCircuit(identifier, currentCircuit)
+		currentCircuit.functions[identifier] = ifFunction
+
+		ifConstraint := &Constraint{
+			Output: Token{
+				Type:       IF_FUNCTION_CALL,
+				Identifier: identifier,
+			},
+		}
+		currentCircuit.taskStack.add(ifConstraint)
+
+		condition, rest := splitTokensAtFirstString(tokens, "{")
+
+		p.parseExpression(condition[1:], ifConstraint)
+
+		ifStatement, rest, success := splitAtClosingSwingBrackets(rest)
+		if !success {
+			panic("closing brackets missing")
+		}
+		p.NEWPreCompile(ifFunction, ifStatement)
+		p.NEWPreCompile(currentCircuit, rest)
+		return
+	case ELSE:
+
+		if ex, lastTask := currentCircuit.taskStack.PeekLast(); !ex || lastTask.Output.Type != IF_FUNCTION_CALL {
+			p.error("if statement must proceed else!")
+		}
+
+		identifier := fmt.Sprintf("else%v", currentCircuit.taskStack.len())
+
+		elseFunction := newCircuit(identifier, currentCircuit)
+
+		currentCircuit.functions[identifier] = elseFunction
+
+		ifConstraint := &Constraint{
+			Output: Token{
+				Type:       IF_FUNCTION_CALL,
+				Identifier: identifier,
+			},
+		}
+		currentCircuit.taskStack.add(ifConstraint)
+
+		condition, rest := splitTokensAtFirstString(tokens, "{")
+
+		p.parseExpression(condition[1:], ifConstraint)
+
+		ifStatement, rest, success := splitAtClosingSwingBrackets(rest)
+		if !success {
+			panic("closing brackets missing")
+		}
+		p.NEWPreCompile(elseFunction, ifStatement)
+		p.NEWPreCompile(currentCircuit, rest)
+		return
+	case FOR:
+		// TODO for loops a just syntactic suggar for a recursive function
+		// for declare; till; increment === var declare; func loop(till,increment){ if till then return; increment(); return loop(till, increment) }
+		// for (  a<5 ; a+=1)
+		ForConst := &Constraint{Output: Token{Type: FOR}, Inputs: []*Constraint{}}
+		var success bool
+		if tokens[1].Identifier != "(" {
+			p.error("brackets '(' missing, got %v", tokens[1])
+		}
+		// a = 4;
+		//l, r := splitTokensAtFirstString(tokens[2:], ";")
+		//if r[0].identifier != ";" {
+		//	p.error("';' expected, got %v", r[0])
+		//}
+		//r = r[1:]
+		//if b, err := isVariableAssignment(l[1:]); !b {
+		//	p.error(err)
+		//}
+		//varConst := &Constraint{
+		//	Output: Token{
+		//		Type:  VARIABLE_DECLARE,
+		//		identifier: l[1].identifier,
+		//	},
+		//}
+		//p.parseExpression(l[3:], varConst)
+		//ForConst.ArgumentIdentifiers = append(ForConst.ArgumentIdentifiers, varConst)
+
+		// a <5;
+		l, r := splitTokensAtFirstString(tokens[2:], ";")
+		if r[0].Identifier != ";" {
+			p.error("';' expected, got %v", r[0])
+		}
+		r = r[1:]
+		p.parseExpression(l, ForConst)
+		//a = a+1)
+		l, r, success = splitAtClosingBrackets(r)
+		if !success {
+			p.error("closing brackets missing")
+		}
+		if b, _, err := isVariableAssignment(l); !b {
+			p.error(err)
+		}
+
+		overload, expr := splitTokensAtFirstString(l, "=")
+
+		////hannes = 42
+		//if b, rem, _ := isVariableAssignment(l); b {
+		varConst := &Constraint{
+			Output: Token{
+				Type: VARIABLE_OVERLOAD,
+			},
+		}
+		p.parseExpression(overload, varConst)
+		p.parseExpression(expr[1:], varConst)
+
+		ForConst.Inputs = append(ForConst.Inputs, varConst)
+
+		p.constraintChan <- ForConst
+		r = removeLeadingBreaks(r)
+
+		if r[0].Identifier != "{" {
+			p.error("brackets '{' missing, got %v", r[0])
+		}
+		l, r, success = splitAtClosingSwingBrackets(r[1:])
+		if !success {
+			p.error("closing brackets missing")
+		}
+		//p.statementMode(l)
+		p.constraintChan <- &Constraint{
+			Output: Token{
+				Type: NESTED_STATEMENT_END,
+			},
+		}
+		//p.statementMode(r)
+		break
+	case IDENTIFIER_VARIABLE: //variable overloading -> a = a * 4
+		l, r := splitTokensAtFirstString(tokens, "\n")
+
+		if r != nil && r[0].Identifier != "\n" {
+			p.error("linebreak expected")
+		}
+
+		overload, expr := splitTokensAtFirstString(l, "=")
+		ov := &Constraint{
+			Output: Token{
+				Type: VARIABLE_OVERLOAD,
+			},
+		}
+		varConst := &Constraint{
+			Output: Token{
+				Type: VARIABLE_OVERLOAD,
+			},
+			Inputs: []*Constraint{ov},
+		}
+
+		for arguments, remm := splitAtFirstHighestStringType(overload, ","); ; arguments, remm = splitAtFirstHighestStringType(remm, ",") {
+			arguments = removeLeadingAndTrailingBreaks(arguments)
+
+			//the first input is the thing to overwrite
+			p.parseExpression(overload, ov)
+			if _, ex := currentCircuit.findFunctionInBloodline(overload[0].Identifier); !ex {
+				p.error(fmt.Sprintf("variable %s not declared", overload[0].Identifier))
+			}
+
+			if remm == nil {
+				break
+			}
+		}
+
+		//before we parse the rhs, finish of the rest
+		p.NEWPreCompile(currentCircuit, r)
+
+		//the second input is the  'new to assign' expression
+		p.parseExpression(expr[1:], varConst)
+		currentCircuit.taskStack.add(varConst)
+		return
+	case BOOL:
+		//TODO i should stop treating arrays as something speacial, they are just
+		//syntactic suggar for a function
+		// say bool[2] a = [k,z] ====  func a(x){ if x =0 return k, else if x =1 reutrn z, else return nil }
+		//bool a = 0/1
+		//bool[4][4] a = [[],[],[],[]]
+		assignmentLine, afterBreak := splitTokensAtFirstString(tokens, "\n")
+
+		lhs, rhs := splitTokensAtFirstString(assignmentLine, "=")
+
+		id := lhs[len(lhs)-1]
+		p.AssertIdentifier(id)
+		if len(rhs[1:]) == 0 {
+			p.error("assignment missing")
+		}
+		if _, ex := currentCircuit.functions[(id.Identifier)]; ex {
+			panic(fmt.Sprintf("variable %s already declared", id.Identifier))
+		}
+
+		tok := Token{
+			Type:       BOOL,
+			Identifier: id.Identifier,
+		}
+
+		//read and set the declared array size on the lhs
+		if len(lhs) > 2 {
+			tok.isArray = true
+			tok.dimensions = p.loadDimension(lhs[1:len(lhs)-1], []int64{})
+		}
+		p.NEWPreCompile(currentCircuit, afterBreak)
+
+		varConst := &Constraint{
+			Output: tok,
+		}
+
+		p.parseExpression(rhs[1:], varConst)
+		p.loadArray(currentCircuit, id.Identifier, varConst.Inputs[0], varConst.Output.dimensions, []int{})
+		currentCircuit.functions[(id.Identifier)] = tok.primitiveReturnfunction()
+		return
+	case RETURN:
+		//return (1+a)
+		l, _ := splitTokensAtFirstString(tokens, "\n")
+		returnCOnstraint := &Constraint{
+			Output: Token{
+				Type: RETURN,
+			},
+		}
+		p.argumentParse(l[1:], splitNothing, returnCOnstraint)
+		currentCircuit.taskStack.add(returnCOnstraint)
+		return
+	case FUNCTION_CALL:
+		//fkt(args...)    equal(a,2) -> creates assertion gates s.t. a=2
+
+		varConst := &Constraint{
+			Output: tokens[0],
+		}
+		if _, ex := currentCircuit.findFunctionInBloodline(tokens[0].Identifier); !ex {
+			panic(fmt.Sprintf("function %s not declared", tokens[0].Identifier))
+		}
+
+		//todo.. what if we call a function with a function call as argument, of a function that has not yet been declared
+		r := p.argumentParse(tokens[1:], splitAtClosingBrackets, varConst)
+		currentCircuit.taskStack.add(varConst)
+
+		p.NEWPreCompile(currentCircuit, r)
+		return
+
+	default:
+		p.error("%v", tokens)
+	}
+	return ret
+}
+
+func (p *Parser) loadDimension(toks []Token, in []int64) (res []int64) {
+	if len(toks) == 0 {
+		return in
+	}
+	if len(toks) < 3 {
+		p.error("invalid array")
+	}
+	if toks[0].Identifier != "[" || toks[2].Identifier != "]" || toks[1].Type != DecimalNumberToken {
+		p.error("invalid array\"")
+	}
+	nr, err := strconv.ParseInt(toks[1].Identifier, 10, 64)
+	if err != nil {
+		p.error(err.Error())
+	}
+	return p.loadDimension(toks[3:], append(in, nr))
+}
+
+func (p *Parser) resolveArrayName(currentCircuit *function, con *Constraint) (composedName string, arrayDimension []int64, isArray bool) {
+
+	composedName = con.Output.Identifier
+	//if len(c.ArgumentIdentifiers) < 1 {
+	//	panic("accessing array index failed")
+	//}
+	for _, in := range con.Inputs {
+		bund, _ := currentCircuit.compile(in, newGateContainer())
+		if bund.fac().containsArgument() {
+			p.error("cannot access array dynamically in an arithmetic circuit currently")
+		}
+		if len(bund.fac()) > 1 {
+			panic("unexpected")
+		}
+		tmp, err := strconv.ParseInt(bund.fac()[0].Typ.Identifier, 10, 64)
+		if err != nil || tmp < 0 {
+			p.error(err.Error())
+		}
+		arrayDimension = append(arrayDimension, tmp)
+		composedName += fmt.Sprintf("[%v]", tmp)
+		return composedName, arrayDimension, true
+	}
+	return
+}
+func (p *Parser) loadArray(current *function, name string, constaint *Constraint, dim []int64, pos []int) {
+	if len(constaint.Inputs) != int(dim[0]) {
+		p.error("array assignment size missmatch")
+	}
+	if len(dim) == 1 {
+		st := name
+		for _, v := range pos {
+			st += fmt.Sprintf("[%v]", v)
+		}
+		for i := 0; i < int(dim[0]); i++ {
+			id := st + fmt.Sprintf("[%v]", i)
+			current.functions[id] = constaint.Inputs[i].primitiveReturnfunction()
+		}
+		return
+	}
+	for i, v := range constaint.Inputs {
+		p.loadArray(current, name, v, dim[1:], append(pos, i))
+	}
+
+}
+
+func (p *Parser) AssertIdentifier(token Token) {
+	if token.Type != IDENTIFIER_VARIABLE || token.Identifier == "" {
+		p.error("identifier expected")
+	}
+}
+func (p *Parser) Assert(in string, tok Token) {
+	if tok.Identifier != in {
+		p.error("expected %v, got %v", in, tok.Identifier)
+	}
+}
+func (p *Parser) AssertIdentifiedType(typ TokenType, tok Token) {
+	if tok.Identifier == "" {
+		p.error("expected identifier")
+	}
+	if tok.Type != typ {
+		p.error("expected type %v, got %v", typ, tok.Type)
+	}
 }
 
 func removeTrailingBreaks(in []Token) (out []Token) {
@@ -789,6 +999,9 @@ func isSurroundedByBrackets(in []Token) bool {
 func splitAtClosingBrackets(in []Token) (cutLeft, cutRight []Token, success bool) {
 	return splitAtClosingStringBrackets(in, "(", ")")
 }
+func splitNothing(in []Token) (cutLeft, cutRight []Token, success bool) {
+	return in, nil, true
+}
 func splitAtClosingSwingBrackets(in []Token) (cutLeft, cutRight []Token, success bool) {
 	return splitAtClosingStringBrackets(in, "{", "}")
 }
@@ -797,14 +1010,13 @@ func splitAtClosingSquareBrackets(in []Token) (cutLeft, cutRight []Token, succes
 }
 
 func splitAtClosingStringBrackets(in []Token, open, close string) (cutLeft, cutRight []Token, success bool) {
-	ctr := 0
+	ctr := 1
 	start := 1
 	if in[0].Identifier != open {
-		ctr = 1
 		start = 0
 	}
 
-	for i := 0; i < len(in); i++ {
+	for i := start; i < len(in); i++ {
 		if in[i].Identifier == open {
 			ctr++
 		}
@@ -812,7 +1024,7 @@ func splitAtClosingStringBrackets(in []Token, open, close string) (cutLeft, cutR
 			ctr--
 			if ctr == 0 {
 				if i == len(in)-1 {
-					return in[start:i], cutRight, true
+					return in[start:i], nil, true
 				}
 				return in[start:i], in[i+1:], true
 			}

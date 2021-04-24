@@ -1,13 +1,5 @@
 package Circuitcompiler
 
-import (
-	"fmt"
-	//"fmt"
-	////"math/big"
-	//"strings"
-	"testing"
-)
-
 var CircuitCorrectnessTest = []string{
 	`
 func main( a,b,c) {	
@@ -22,27 +14,27 @@ func foo(a){
 `,
 }
 
-func TestPrintTree(t *testing.T) {
-
-	for _, test := range CircuitCorrectnessTest {
-
-		program := Parse(test, true)
-
-		fmt.Println("\n unreduced")
-		fmt.Println(test)
-
-		container := program.Execute()
-		gates := container.orderedmGates
-		for _, g := range gates {
-			fmt.Printf("\n %v", g)
-		}
-
-		//fmt.Println("\n generating R1CS")
-		//r1cs := program.GatesToR1CS(gates)
-		//fmt.Println(r1cs.Lexer)
-		//fmt.Println(r1cs.R)
-		//fmt.Println(r1cs.O)
-
-	}
-
-}
+//func TestPrintTree(t *testing.T) {
+//
+//	for _, test := range CircuitCorrectnessTest {
+//
+//		program := Parse(test, true)
+//
+//		fmt.Println("\n unreduced")
+//		fmt.Println(test)
+//
+//		container := program.Execute()
+//		gates := container.orderedmGates
+//		for _, g := range gates {
+//			fmt.Printf("\n %v", g)
+//		}
+//
+//		//fmt.Println("\n generating R1CS")
+//		//r1cs := program.GatesToR1CS(gates)
+//		//fmt.Println(r1cs.Lexer)
+//		//fmt.Println(r1cs.R)
+//		//fmt.Println(r1cs.O)
+//
+//	}
+//
+//}

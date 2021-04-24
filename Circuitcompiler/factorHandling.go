@@ -39,6 +39,19 @@ func (f factor) CopyAndSetMultiplicative(v *big.Int) (n factor) {
 		multiplicative: new(big.Int).Set(v),
 	}
 }
+
+func (f factors) containsArgument() bool {
+	if len(f) == 0 {
+		return false
+	}
+	for _, v := range f {
+		if v.Typ.isArgument {
+			return true
+		}
+	}
+	return false
+}
+
 func (f factor) Negate() (new factor) {
 	new = factor{
 		Typ:            f.Typ,
@@ -301,7 +314,6 @@ func (from factor) primitiveReturnfunction() (gives *function) {
 
 	if from.Typ.Type == DecimalNumberToken {
 		c := from.Typ.primitiveReturnfunction()
-		c.isNumber = true
 		c.value = from.multiplicative
 		return c
 	}
@@ -336,48 +348,48 @@ func (from factor) primitiveReturnfunction() (gives *function) {
 
 //TODO add assertions
 func combineFunctions(operation string, a, b *function) *function {
-	if a.isNumber && b.isNumber {
-		switch operation {
-		case "*":
-			f := factor{
-				Typ: Token{
-					Type:       DecimalNumberToken,
-					Identifier: utils.Field.ArithmeticField.Mul(a.value, b.value).String(),
-				},
-				multiplicative: utils.Field.ArithmeticField.Mul(a.value, b.value),
-			}
-			return f.primitiveReturnfunction()
-		case "/":
-			f := factor{
-				Typ: Token{
-					Type:       DecimalNumberToken,
-					Identifier: utils.Field.ArithmeticField.Div(a.value, b.value).String(),
-				},
-				multiplicative: utils.Field.ArithmeticField.Div(a.value, b.value),
-			}
-			return f.primitiveReturnfunction()
-		case "-":
-			f := factor{
-				Typ: Token{
-					Type:       DecimalNumberToken,
-					Identifier: utils.Field.ArithmeticField.Sub(a.value, b.value).String(),
-				},
-				multiplicative: utils.Field.ArithmeticField.Sub(a.value, b.value),
-			}
-			return f.primitiveReturnfunction()
-		case "+":
-			f := factor{
-				Typ: Token{
-					Type:       DecimalNumberToken,
-					Identifier: utils.Field.ArithmeticField.Add(a.value, b.value).String(),
-				},
-				multiplicative: utils.Field.ArithmeticField.Add(a.value, b.value),
-			}
-			return f.primitiveReturnfunction()
-		default:
-
-		}
-	}
+	//if a.isNumber && b.isNumber {
+	//	switch operation {
+	//	case "*":
+	//		f := factor{
+	//			Typ: Token{
+	//				Type:       DecimalNumberToken,
+	//				Identifier: utils.Field.ArithmeticField.Mul(a.value, b.value).String(),
+	//			},
+	//			multiplicative: utils.Field.ArithmeticField.Mul(a.value, b.value),
+	//		}
+	//		return f.primitiveReturnfunction()
+	//	case "/":
+	//		f := factor{
+	//			Typ: Token{
+	//				Type:       DecimalNumberToken,
+	//				Identifier: utils.Field.ArithmeticField.Div(a.value, b.value).String(),
+	//			},
+	//			multiplicative: utils.Field.ArithmeticField.Div(a.value, b.value),
+	//		}
+	//		return f.primitiveReturnfunction()
+	//	case "-":
+	//		f := factor{
+	//			Typ: Token{
+	//				Type:       DecimalNumberToken,
+	//				Identifier: utils.Field.ArithmeticField.Sub(a.value, b.value).String(),
+	//			},
+	//			multiplicative: utils.Field.ArithmeticField.Sub(a.value, b.value),
+	//		}
+	//		return f.primitiveReturnfunction()
+	//	case "+":
+	//		f := factor{
+	//			Typ: Token{
+	//				Type:       DecimalNumberToken,
+	//				Identifier: utils.Field.ArithmeticField.Add(a.value, b.value).String(),
+	//			},
+	//			multiplicative: utils.Field.ArithmeticField.Add(a.value, b.value),
+	//		}
+	//		return f.primitiveReturnfunction()
+	//	default:
+	//
+	//	}
+	//}
 
 	rmp := newCircuit("", nil)
 	rmp.functions[a.Name] = (a)

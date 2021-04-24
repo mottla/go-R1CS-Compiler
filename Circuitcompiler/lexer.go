@@ -1,6 +1,6 @@
 package Circuitcompiler
 
-// This package provides a Lexer that globalFunction similarly to Rob Pike's discussion
+// This package provides a Lexer that GlobalFunction similarly to Rob Pike's discussion
 // about lexer design in this [talk](https://www.youtube.com/watch?v=HxaD_trXwRE).
 
 import (
@@ -26,6 +26,9 @@ type Tokens struct {
 type Token struct {
 	Type       TokenType
 	Identifier string
+	isArray    bool
+	isArgument bool
+	dimensions []int64
 }
 
 func (ch Token) String() string {
@@ -40,11 +43,12 @@ func (t *Tokens) next() (r Token) {
 	t.toks = t.toks[1:]
 	return r
 }
-func (t Token) toFactors() factors {
-	return factors{factor{
+func (t Token) toFactors() (r factors) {
+	r = []factor{{
 		Typ:            t,
 		multiplicative: bigOne,
 	}}
+	return
 }
 func (t Token) toFactor() factor {
 	return factor{
@@ -111,7 +115,7 @@ func init() {
 
 var Operator = BinaryComperatorToken | ArithmeticOperatorToken | BooleanOperatorToken | BitOperatorToken | AssignmentOperatorToken
 var IN = IDENTIFIER_VARIABLE | ARGUMENT | VARIABLE_DECLARE | UNASIGNEDVAR
-var Type = BOOL | U8 | U16 | U32 | U64
+var Types = BOOL | U8 | U16 | U32 | U64 | FIELD
 
 const (
 	DecimalNumberToken TokenType = 1 << iota
@@ -470,6 +474,7 @@ func IdentState(l *Lexer) StateFunc {
 		return ProbablyWhitespaceState
 	}
 
+	//for import.. renew this
 	if peek == '"' {
 		l.Next()
 		l.Ignore()

@@ -6,42 +6,71 @@ import (
 	"math/big"
 )
 
+type returnTyped struct {
+	facs              factors
+	preloadedFunction function
+}
+type bundle []returnTyped
+
+func ret(facs factors,
+	preloadedFunction function) returnTyped {
+	return returnTyped{
+		facs:              facs,
+		preloadedFunction: preloadedFunction,
+	}
+}
+func rets(facs factors,
+	preloadedFunction function) []returnTyped {
+	return []returnTyped{{
+		facs:              facs,
+		preloadedFunction: preloadedFunction},
+	}
+}
+func emptyRets() ([]returnTyped, bool) {
+	return rets(nil, function{}), false
+}
+func (f bundle) fac() factors {
+	if len(f) != 0 {
+		return nil
+	}
+	return f[0].facs
+}
+
 //recursively walks through the parse tree to create a list of all
 //multiplication gates needed for the QAP construction
 //Takes into account, that multiplication with constants and addition (= substraction) can be reduced, and does so
 //
-func (currentCircuit *function) compile(currentConstraint *Constraint, gateCollector *gateContainer) (facs factors, reachedReturn bool, preloadedFunction function) {
+func (currentCircuit *function) compile(currentConstraint *Constraint, gateCollector *gateContainer) (returnBundle bundle, reachedReturn bool) {
+	if currentConstraint.Output.Type&Types != 0 {
+		return rets(Token{
+			Type:       ARGUMENT,
+			Identifier: currentConstraint.Output.Identifier,
+		}.toFactors(), function{}), false
+	}
 
 	switch currentConstraint.Output.Type {
 	case ARGUMENT:
 
-		return Token{
+		return rets(Token{
 			Type:       ARGUMENT,
 			Identifier: currentConstraint.Output.Identifier,
-		}.toFactors(), false, function{}
+		}.toFactors(), function{}), false
 	case DecimalNumberToken:
 		value, success := utils.Field.ArithmeticField.StringToFieldElement(currentConstraint.Output.Identifier)
 		if !success {
 			panic("not a constant")
 		}
 		f := factor{Typ: Token{Type: DecimalNumberToken, Identifier: currentConstraint.Output.Identifier}, multiplicative: value}
-		return factors{f}, false, function{}
+		return rets(factors{f}, function{}), false
 	case IDENTIFIER_VARIABLE:
 		// an identifier is always a lone indentifier. If such one is reached. we are at a leaf and either can resolve him as argument or declared function/variable
 
 		if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); ex {
-			if f.isNumber {
-				fac := factor{Typ: Token{Type: DecimalNumberToken, Identifier: f.Name}, multiplicative: f.value}
-				return factors{fac}, false, function{}
-			}
-			if len(f.Inputs) == 0 {
 
-				if con, ex := currentCircuit.findConstraintInBloodline(currentConstraint.Output.Identifier); ex {
-					return currentCircuit.compile(con, gateCollector)
-				}
-				panic(fmt.Sprintf("variable %s not declared", currentConstraint.Output.Identifier))
+			if len(f.ArgumentIdentifiers) == 0 {
+				return f.execute(gateCollector)
 			}
-			return nil, false, *f
+			return rets(nil, *f), false
 
 			//return f.execute(gateCollector)
 
@@ -50,23 +79,23 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		panic(fmt.Sprintf("variable %s not declared", currentConstraint.Output.Identifier))
 	case FOR:
 		//we check the condition each time we rerun the loop
-		isStatic, isSat := currentCircuit.checkStaticCondition(currentConstraint.Inputs[0])
-		for isSat && isStatic {
-			content := &Constraint{
-				Output: Token{
-					Type:       FUNCTION_CALL,
-					Identifier: currentConstraint.Output.Identifier,
-				},
-			}
-			f, retu, fkt := currentCircuit.compile(content, gateCollector)
-			if retu {
-				return f, true, fkt
-			}
-			//the increment condition i += 1
-			currentCircuit.compile(currentConstraint.Inputs[1], gateCollector)
-			isStatic, isSat = currentCircuit.checkStaticCondition(currentConstraint.Inputs[0])
-		}
-		return nil, false, function{}
+		//isStatic, isSat := currentCircuit.checkStaticCondition(currentConstraint.Inputs[0])
+		//for isSat && isStatic {
+		//	content := &Constraint{
+		//		Output: Token{
+		//			Type:       FUNCTION_CALL,
+		//			Identifier: currentConstraint.Output.Identifier,
+		//		},
+		//	}
+		//	f, retu, fkt := currentCircuit.compile(content, gateCollector)
+		//	if retu {
+		//		return rets(f, true, fkt)
+		//	}
+		//	//the increment condition i += 1
+		//	currentCircuit.compile(currentConstraint.Inputs[1], gateCollector)
+		//	isStatic, isSat = currentCircuit.checkStaticCondition(currentConstraint.Inputs[0])
+		//}
+		//return nil, false, function{}
 	case UNASIGNEDVAR:
 		switch len(currentConstraint.Inputs) {
 		case 0:
@@ -80,74 +109,68 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			panic(currentConstraint)
 		}
 	case RETURN:
-		switch len(currentConstraint.Inputs) {
-		case 0:
-			fac := Token{
-				Type: DecimalNumberToken,
-			}
-			return fac.toFactors(), true, function{}
-		case 1:
-			f, _, fkt := currentCircuit.compile(currentConstraint.Inputs[0], gateCollector)
-			return f, true, fkt
-		case 3:
+		var r = []returnTyped{}
 
-		default:
-			panic("not possible")
+		for _, v := range currentConstraint.Inputs {
+			bund, _ := currentCircuit.compile(v, gateCollector)
+			r = append(r, bund...)
 		}
+		return r, true
 	case VARIABLE_OVERLOAD:
 
-		if len(currentConstraint.Inputs) != 2 {
-			panic("unexpected reach")
+		bund, _ := currentCircuit.compile(currentConstraint.Inputs[1], gateCollector)
+		if len(bund) != len(currentConstraint.Inputs[0].Inputs) {
+			panic("assignment missmatch")
 		}
 
-		var toOverloadIdentifier = currentConstraint.Inputs[0].Output.Identifier
+		for i, v := range currentConstraint.Inputs[0].Inputs {
+			var toOverloadIdentifier = v.Output.Identifier
 
-		if currentConstraint.Inputs[0].Output.Type == ARRAY_CALL {
-			var id string
-			if f, ex := currentCircuit.findFunctionInBloodline(toOverloadIdentifier); !ex {
-				id = currentConstraint.Inputs[0].Output.Identifier
-			} else {
-				id = f.Name
+			//if v.Output.Type == ARRAY_CALL {
+			//	var id string
+			//	if f, ex := currentCircuit.findFunctionInBloodline(toOverloadIdentifier); !ex {
+			//		id = currentConstraint.Inputs[0].Output.Identifier
+			//	} else {
+			//		id = f.Name
+			//	}
+			//	// myArray[7*3] = expression
+			//	toOverloadIdentifier = currentCircuit.resolveArrayName(id, currentConstraint.Inputs[0].Inputs)
+			//	//myArray[21] = expression
+			//
+			//}
+
+			context, ex := currentCircuit.getCircuitContainingFunctionInBloodline(toOverloadIdentifier)
+			if !ex {
+				panic("does not exist")
 			}
-			// myArray[7*3] = expression
-			toOverloadIdentifier = currentCircuit.resolveArrayName(id, currentConstraint.Inputs[0].Inputs)
-			//myArray[21] = expression
 
-		}
-		//new(big.Int).Xor()
-		//resolve the expression
-		facs, _, fkt := currentCircuit.compile(currentConstraint.Inputs[1], gateCollector)
-		context, ex := currentCircuit.getCircuitContainingFunctionInBloodline(toOverloadIdentifier)
-		if !ex {
-			panic("does not exist")
-		}
-		if facs == nil {
-			context.functions[toOverloadIdentifier] = &fkt
-			return nil, false, function{}
-		}
-		//overwrite
+			if bund[i].facs == nil {
+				context.functions[toOverloadIdentifier] = &bund[i].preloadedFunction
+				continue
+			}
+			//overwrite
 
-		context.functions[toOverloadIdentifier] = facs.primitiveReturnfunction()
-
-		return facs, false, function{}
+			context.functions[toOverloadIdentifier] = bund[i].facs.primitiveReturnfunction()
+		}
+		return emptyRets()
 	case ARRAY_CALL:
-		var id string
-		if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); !ex {
-			id = currentConstraint.Output.Identifier
-		} else {
-			id = f.Name
-		}
-		resolvedName := currentCircuit.resolveArrayName(id, currentConstraint.Inputs)
-		if f, ex := currentCircuit.findFunctionInBloodline(resolvedName); ex {
-			return f.execute(gateCollector)
-		}
-
-		if con, ex := currentCircuit.findConstraintInBloodline(resolvedName); ex {
-			a, _, fkt := currentCircuit.compile(con, gateCollector)
-			return a, false, fkt
-		} else {
-			panic(fmt.Sprintf("array %s not declared", resolvedName))
-		}
+		//var id string
+		//if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); !ex {
+		//	id = currentConstraint.Output.Identifier
+		//} else {
+		//	id = f.Name
+		//}
+		//resolvedName := currentCircuit.resolveArrayName(id, currentConstraint.Inputs)
+		//if f, ex := currentCircuit.findFunctionInBloodline(resolvedName); ex {
+		//	return f.execute(gateCollector)
+		//}
+		//
+		//if con, ex := currentCircuit.findConstraintInBloodline(resolvedName); ex {
+		//	a, _, fkt := currentCircuit.compile(con, gateCollector)
+		//	return a, false, fkt
+		//} else {
+		//	panic(fmt.Sprintf("array %s not declared", resolvedName))
+		//}
 	case IF_FUNCTION_CALL:
 		var ifElseCircuits *function
 		var ex bool
@@ -163,44 +186,44 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			//else condition
 			if task.Inputs == nil || len(task.Inputs) == 0 {
 
-				fak, _, _ := ifElseCircuits.compile(&Constraint{
+				re, _ := ifElseCircuits.compile(&Constraint{
 					Output: Token{
 						Type:       FUNCTION_CALL,
 						Identifier: task.Output.Identifier,
 					},
 				}, gateCollector)
 				if result == nil {
-					return fak, true, function{}
+					rets(re.fac(), function{})
 				}
 
-				var composed = fak.primitiveReturnfunction()
+				var composed = re.fac().primitiveReturnfunction()
 
 				for _, negatedCondition := range negatedConditions {
 					composed = combineFunctions("*", composed, negatedCondition)
 				}
-				f, _, _ := composed.execute(gateCollector)
+				bund, _ := composed.execute(gateCollector)
 
-				return addFactors(result, f), true, function{}
+				return rets(addFactors(result, bund.fac()), function{}), false
 			}
 			if isStat, isSat := currentCircuit.checkStaticCondition(task.Inputs[0]); isSat && isStat {
 
-				fak, _, _ := ifElseCircuits.compile(&Constraint{
+				bund, _ := ifElseCircuits.compile(&Constraint{
 					Output: Token{
 						Type:       FUNCTION_CALL,
 						Identifier: task.Output.Identifier,
 					},
 				}, gateCollector)
 				if result == nil {
-					return fak, true, function{}
+					return rets(bund.fac(), function{}), false
 				}
 				panic("not done yet")
 
-				return addFactors(fak, result), true, function{}
+				return rets(addFactors(bund.fac(), result), function{}), false
 			} else if !isStat {
 
 				//the condition
-				condition, ret, _ := ifElseCircuits.compile(task.Inputs[0], gateCollector)
-				if ret {
+				bund, r := ifElseCircuits.compile(task.Inputs[0], gateCollector)
+				if r {
 					panic("cannot return")
 				}
 
@@ -208,14 +231,14 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 					//run whats inside the if { }
 					//if there is a return, we append the conditional to it.
 					//TODO how to handle overwrites?
-					f, r, _ := statement.execute(gateCollector)
+					rr, r := statement.execute(gateCollector)
 					if r {
-						composed := combineFunctions("*", condition.primitiveReturnfunction(), f.primitiveReturnfunction())
+						composed := combineFunctions("*", bund.fac().primitiveReturnfunction(), rr.fac().primitiveReturnfunction())
 						for _, negatedCondition := range negatedConditions {
 							composed = combineFunctions("*", composed, negatedCondition)
 						}
-						f, _, _ = composed.execute(gateCollector)
-						result = addFactors(result, f)
+						f, _ := composed.execute(gateCollector)
+						result = addFactors(result, f.fac())
 					}
 
 				} else {
@@ -230,34 +253,34 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 					Type:       DecimalNumberToken,
 					Identifier: "1",
 				}
-				negateFkt := combineFunctions("-", one.primitiveReturnfunction(), condition.primitiveReturnfunction())
+				negateFkt := combineFunctions("-", one.primitiveReturnfunction(), bund.fac().primitiveReturnfunction())
 				negatedConditions = append(negatedConditions, negateFkt)
 
 			}
 
 		}
-		return result, false, function{}
+		return emptyRets()
 	case FUNCTION_CALL:
 		switch currentConstraint.Output.Identifier {
 		case "BREAK":
 			// DEBUG function. Set a break point somewhere and read all arguments that were passed to BREAK(args...)
-			for _, v := range currentConstraint.Inputs {
-				in, _, _ := currentCircuit.compile(v.clone(), gateCollector)
-
-				st := fmt.Sprintf("%v , %v", v.String(), in)
-				fmt.Println(st)
-			}
+			//for _, v := range currentConstraint.Inputs {
+			//	//in, _, _ := currentCircuit.compile(v.clone(), gateCollector)
+			//	//
+			//	//st := fmt.Sprintf("%v , %v", v.String(), in)
+			//	//fmt.Println(st)
+			//}
 			//break point
-			return nil, false, function{}
+			return emptyRets()
 		case "SPLIT":
 			if len(currentConstraint.Inputs) == 0 {
 				//nothing to do
-				return nil, false, function{}
+				return emptyRets()
 			}
 			//prepare input number Z
 			arg := currentConstraint.Inputs[0].clone()
 			currentCircuit.SPLIT(true, arg, gateCollector)
-			return nil, false, function{}
+			return emptyRets()
 
 		case "addGateConstraint":
 			if len(currentConstraint.Inputs) != 2 {
@@ -265,9 +288,9 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			}
 			leftClone := currentConstraint.Inputs[0].clone()
 			rightClone := currentConstraint.Inputs[1].clone()
-			leftFactors, _, _ := currentCircuit.compile(leftClone, gateCollector)
-			rightFactors, _, _ := currentCircuit.compile(rightClone, gateCollector)
-			commonExtracted, extractedLeft, extractedRight := extractConstant(leftFactors, rightFactors)
+			leftFactors, _ := currentCircuit.compile(leftClone, gateCollector)
+			rightFactors, _ := currentCircuit.compile(rightClone, gateCollector)
+			commonExtracted, extractedLeft, extractedRight := extractConstant(leftFactors.fac(), rightFactors.fac())
 
 			sGate := summationGate(addFactors(extractedLeft, extractedRight))
 			id := gateCollector.Add(sGate)
@@ -276,17 +299,17 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				Typ:            id,
 				multiplicative: commonExtracted,
 			}}
-			return fres, false, *fres.primitiveReturnfunction()
+			return rets(fres, function{}), false
 		case "equal":
 			if len(currentConstraint.Inputs) != 2 {
 				panic("equality constraint requires 2 arguments")
 			}
 			leftClone := currentConstraint.Inputs[0].clone()
 			rightClone := currentConstraint.Inputs[1].clone()
-			leftFactors, _, _ := currentCircuit.compile(leftClone, gateCollector)
-			rightFactors, _, _ := currentCircuit.compile(rightClone, gateCollector)
-			gateCollector.Add(equalityGate(leftFactors, rightFactors))
-			return nil, false, function{}
+			leftFactors, _ := currentCircuit.compile(leftClone, gateCollector)
+			rightFactors, _ := currentCircuit.compile(rightClone, gateCollector)
+			gateCollector.Add(equalityGate(leftFactors.fac(), rightFactors.fac()))
+			return emptyRets()
 		default:
 			var nextCircuit *function
 			var ex bool
@@ -302,12 +325,12 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			//if the argument is a function, but not a call, we pass it on
 			for i, v := range currentConstraint.Inputs {
 
-				fkts, _, retFkt := currentCircuit.compile(v, gateCollector)
-				if fkts == nil {
-					inputs[i] = &retFkt
+				re, _ := currentCircuit.compile(v, gateCollector)
+				if re[0].facs == nil {
+					inputs[i] = &re[0].preloadedFunction
 					continue
 				}
-				inputs[i] = fkts.primitiveReturnfunction()
+				inputs[i] = re[0].facs.primitiveReturnfunction()
 			}
 
 			//old := nxt.getFunctionInputs()
@@ -315,10 +338,11 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			//defer nxt.setFunctionInputs(old2,old)
 			isReadyToEvaluate := nxt.getsLoadedWith(inputs)
 			if !isReadyToEvaluate {
-				return nil, false, *nxt
+				return rets(nil, *nxt), false
 			}
-			facs, _, fkt := nxt.execute(gateCollector)
-			return facs, false, fkt
+			rr, _ := nxt.execute(gateCollector)
+			facs, fkt := rr[0].facs, rr[0].preloadedFunction
+			return rets(facs, fkt), false
 		}
 	default:
 	}
@@ -329,19 +353,19 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		right := currentConstraint.Inputs[2]
 		operation := currentConstraint.Inputs[0].Output
 
-		var leftFactors, rightFactors factors
+		var leftFactors, rightFactors bundle
 
 		switch operation.Type {
 		case BinaryComperatorToken:
 
 			switch operation.Identifier {
 			case "==":
-				return currentCircuit.equalityGate(currentConstraint, gateCollector)
+				return rets(currentCircuit.equalityGate(currentConstraint, gateCollector)), false
 			case "!=":
-				fk, _, _ := currentCircuit.equalityGate(currentConstraint, gateCollector)
-				return addFactors(Token{
+				fk, _ := currentCircuit.equalityGate(currentConstraint, gateCollector)
+				return rets(addFactors(Token{
 					Type: DecimalNumberToken,
-				}.toFactors(), fk.Negate()), false, function{}
+				}.toFactors(), fk.Negate()), function{}), false
 			case ">":
 
 				break
@@ -362,17 +386,17 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		case BitOperatorToken:
 
 			var fkt = func(op string) (shift uint64) {
-				rightFactors, _, _ = currentCircuit.compile(right, gateCollector)
-				if !rightFactors.isSingleNumber() {
+				rightFactors, _ = currentCircuit.compile(right, gateCollector)
+				if !rightFactors.fac().isSingleNumber() {
 					panic("right side operand of" + op + " must be a compile-time constant")
 				}
 
-				if !rightFactors[0].multiplicative.IsUint64() {
+				if !rightFactors.fac()[0].multiplicative.IsUint64() {
 					panic("right side operand of " + op + " must be a Uint64")
 
 				}
 				N := utils.Field.ArithmeticField.Q.BitLen()
-				shift = rightFactors[0].multiplicative.Uint64()
+				shift = rightFactors.fac()[0].multiplicative.Uint64()
 				if shift > uint64(N) {
 					panic("right side operand of " + op + " must be smaller then bit size of the underlying field")
 
@@ -399,7 +423,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				for i := int(shift); i < len(bitsLeft)-int(shift); i++ {
 					currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[i-int(shift)].primitiveReturnfunction()
 				}
-				return out.toFactors(), false, function{}
+				return rets(out.toFactors(), function{}), false
 			case ">>":
 				_, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
 				shift := fkt(">>")
@@ -420,7 +444,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 					currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[i+int(shift)].primitiveReturnfunction()
 
 				}
-				return out.toFactors(), false, function{}
+				return rets(out.toFactors(), function{}), false
 			case ">>>":
 				_, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
 				shift := fkt(">>>")
@@ -441,7 +465,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 					currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[utils.Mod(i+int(shift), len(bitsLeft))].primitiveReturnfunction()
 
 				}
-				return out.toFactors(), false, function{}
+				return rets(out.toFactors(), function{}), false
 			case "<<<":
 				_, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
 				shift := fkt("<<<")
@@ -461,7 +485,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 					currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[utils.Mod(i-int(shift), len(bitsLeft))].primitiveReturnfunction()
 
 				}
-				return out.toFactors(), false, function{}
+				return rets(out.toFactors(), function{}), false
 			case "^": //bitwise xor
 				_, _, xorIDs := currentCircuit.xor(currentConstraint, gateCollector)
 
@@ -475,7 +499,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				for i, v := range xorIDs {
 					currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
 				}
-				return eq.toFactors(), false, function{}
+				return rets(eq.toFactors(), function{}), false
 			case "&": //bitwise and
 				_, _, andIDs := currentCircuit.and(currentConstraint, gateCollector)
 
@@ -489,7 +513,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				for i, v := range andIDs {
 					currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
 				}
-				return eq.toFactors(), false, function{}
+				return rets(eq.toFactors(), function{}), false
 			case "|": //bitwise or
 				_, _, andIDs := currentCircuit.or(currentConstraint, gateCollector)
 
@@ -503,7 +527,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				for i, v := range andIDs {
 					currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
 				}
-				return eq.toFactors(), false, function{}
+				return rets(eq.toFactors(), function{}), false
 			}
 			break
 		case BooleanOperatorToken:
@@ -511,29 +535,29 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		case ArithmeticOperatorToken:
 			switch operation.Identifier {
 			case "*":
-				leftFactors, _, _ = currentCircuit.compile(left, gateCollector)
-				rightFactors, _, _ = currentCircuit.compile(right, gateCollector)
+				leftFactors, _ = currentCircuit.compile(left, gateCollector)
+				rightFactors, _ = currentCircuit.compile(right, gateCollector)
 
-				if leftFactors.isSingleNumber() || rightFactors.isSingleNumber() {
-					return mulFactors(leftFactors, rightFactors), currentConstraint.Output.Type == RETURN, function{}
+				if leftFactors.fac().isSingleNumber() || rightFactors.fac().isSingleNumber() {
+					return rets(mulFactors(leftFactors.fac(), rightFactors.fac()), function{}), currentConstraint.Output.Type == RETURN
 				}
-				commonFactor, newLeft, newRight := extractConstant(leftFactors, rightFactors)
+				commonFactor, newLeft, newRight := extractConstant(leftFactors.fac(), rightFactors.fac())
 				mGate := multiplicationGate(newLeft, newRight)
 				nTok := gateCollector.Add(mGate)
 
 				f := factor{Typ: nTok, multiplicative: commonFactor}
-				return factors{f}, currentConstraint.Output.Type == RETURN, function{}
+				return rets(factors{f}, function{}), currentConstraint.Output.Type == RETURN
 			case "/":
 				//a / b
-				leftFactors, _, _ = currentCircuit.compile(left, gateCollector)
-				rightFactors, _, _ = currentCircuit.compile(right, gateCollector)
+				leftFactors, _ = currentCircuit.compile(left, gateCollector)
+				rightFactors, _ = currentCircuit.compile(right, gateCollector)
 
-				if rightFactors.isSingleNumber() { // (x1+x2..)/6
-					return mulFactors(leftFactors, invertFactors(rightFactors)), currentConstraint.Output.Type == RETURN, function{}
+				if rightFactors.fac().isSingleNumber() { // (x1+x2..)/6
+					return rets(mulFactors(leftFactors.fac(), invertFactors(rightFactors.fac())), function{}), currentConstraint.Output.Type == RETURN
 				}
 
-				gcdl, facL := factorSignature(leftFactors)
-				gcdR, facR := factorSignature(rightFactors)
+				gcdl, facL := factorSignature(leftFactors.fac())
+				gcdR, facR := factorSignature(rightFactors.fac())
 				//TODO is this a good idea?
 				commonF := utils.Field.ArithmeticField.Div(gcdl, gcdR)
 
@@ -546,20 +570,20 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				nTok := gateCollector.Add(g)
 
 				f := factor{Typ: nTok, multiplicative: commonF}
-				return factors{f}, currentConstraint.Output.Type == RETURN, function{}
+				return rets(factors{f}, function{}), currentConstraint.Output.Type == RETURN
 			case "**":
 				//apply a fixed exponent exponentiation using a simple square and multiply method
-				leftFactors, _, _ = currentCircuit.compile(left, gateCollector)
-				rightFactors, _, _ = currentCircuit.compile(right, gateCollector)
-				if !rightFactors.isSingleNumber() {
+				leftFactors, _ = currentCircuit.compile(left, gateCollector)
+				rightFactors, _ = currentCircuit.compile(right, gateCollector)
+				if !rightFactors.fac().isSingleNumber() {
 					panic("exponent must be a compile time constant")
 				}
-				if rightFactors[0].multiplicative.Sign() == -1 {
-					rightFactors[0].multiplicative = utils.Field.ArithmeticField.Affine(rightFactors[0].multiplicative)
+				if rightFactors.fac()[0].multiplicative.Sign() == -1 {
+					rightFactors.fac()[0].multiplicative = utils.Field.ArithmeticField.Affine(rightFactors.fac()[0].multiplicative)
 				}
-				processedExponent := new(big.Int).Set(rightFactors[0].multiplicative)
+				processedExponent := new(big.Int).Set(rightFactors.fac()[0].multiplicative)
 
-				base := leftFactors.clone()
+				base := leftFactors.fac().clone()
 				result := Token{Type: DecimalNumberToken}.toFactors()
 				//TODO use Yao's method instead.
 				for ; processedExponent.Cmp(bigOne) == 1; processedExponent.Rsh(processedExponent, 1) {
@@ -581,24 +605,24 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 
 				}
 				if result.isSingleNumber() {
-					return mulFactors(result, base), false, function{}
+					return rets(mulFactors(result, base), function{}), false
 				}
 				combine := gateCollector.Add(multiplicationGate(result, base))
 				result = combine.toFactors()
-				return result, false, function{}
+				return rets(result, function{}), false
 
 			case "+":
-				leftFactors, _, _ = currentCircuit.compile(left, gateCollector)
-				rightFactors, _, _ = currentCircuit.compile(right, gateCollector)
-				addedFactors := addFactors(leftFactors, rightFactors)
-				return addedFactors, currentConstraint.Output.Type == RETURN, function{}
+				leftFactors, _ = currentCircuit.compile(left, gateCollector)
+				rightFactors, _ = currentCircuit.compile(right, gateCollector)
+				addedFactors := addFactors(leftFactors.fac(), rightFactors.fac())
+				return rets(addedFactors, function{}), currentConstraint.Output.Type == RETURN
 
 			case "-":
-				leftFactors, _, _ = currentCircuit.compile(left, gateCollector)
-				rightFactors, _, _ = currentCircuit.compile(right, gateCollector)
-				rightFactors = negateFactors(rightFactors)
-				addedFactors := addFactors(leftFactors, rightFactors)
-				return addedFactors, currentConstraint.Output.Type == RETURN, function{}
+				leftFactors, _ = currentCircuit.compile(left, gateCollector)
+				rightFactors, _ = currentCircuit.compile(right, gateCollector)
+				rf := negateFactors(rightFactors.fac())
+				addedFactors := addFactors(leftFactors.fac(), rf)
+				return rets(addedFactors, function{}), currentConstraint.Output.Type == RETURN
 			}
 			break
 		case AssignmentOperatorToken:
@@ -613,25 +637,25 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 
 func (currentCircuit *function) SPLIT(makeTheBitsAvailableInCurrentCircuit bool, toSplit *Constraint, gateCollector *gateContainer) (arg Token, bits []factor) {
 
-	in, _, _ := currentCircuit.compile(toSplit, gateCollector)
-	if len(in) > 1 {
-		tok := gateCollector.Add(summationGate(in))
+	in, _ := currentCircuit.compile(toSplit, gateCollector)
+	if len(in.fac()) > 1 {
+		tok := gateCollector.Add(summationGate(in.fac()))
 		return tok, split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, tok)
 	}
-	if in.isSingleNumber() {
+	if in.fac().isSingleNumber() {
 		fmt.Println("you really wanna split a constant number into its bits? ")
 	}
 	//if say : Split(5*x), then we need to introduce the constant multiplication gate. even if its stupid..
-	if in[0].multiplicative.Cmp(bigOne) != 0 {
+	if in.fac()[0].multiplicative.Cmp(bigOne) != 0 {
 		one := Token{
 			Type: DecimalNumberToken,
 		}.toFactors()
-		tok := gateCollector.Add(multiplicationGate(in, one))
+		tok := gateCollector.Add(multiplicationGate(in.fac(), one))
 
 		return tok, split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, tok)
 	}
 
-	return in[0].Typ, split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, in[0].Typ)
+	return in.fac()[0].Typ, split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, in.fac()[0].Typ)
 }
 
 func split(makeTheBitsAvailableInCurrentCircuit bool, currentCircuit *function, gateCollector *gateContainer, arg Token) (bits []factor) {
@@ -745,7 +769,7 @@ func (currentCircuit *function) or(currentConstraint *Constraint, gateCollector 
 	return argLeft, argRight, orIds
 }
 
-func (currentCircuit *function) equalityGate(currentConstraint *Constraint, gateCollector *gateContainer) (facs factors, reachedReturn bool, preloadedFunction function) {
+func (currentCircuit *function) equalityGate(currentConstraint *Constraint, gateCollector *gateContainer) (facs factors, preloadedFunction function) {
 
 	argLeft, argRight, xorIDs := currentCircuit.xor(currentConstraint, gateCollector)
 
@@ -793,7 +817,7 @@ func (currentCircuit *function) equalityGate(currentConstraint *Constraint, gate
 
 	c3.rightIns = inverseSumtherm.toFactors()
 	gateCollector.Add(c3)
-	return c1.toFactors(), false, function{}
+	return c1.toFactors(), function{}
 }
 
 //constants, which have been excluded get added to the constraints at the end
@@ -862,9 +886,9 @@ func (p *Program) Execute() (orderedmGates *gateContainer) {
 	mainCircuit := p.GetMainCircuit()
 
 	for _, taks := range mainCircuit.taskStack.data {
-		f, returns, _ := mainCircuit.compile(taks, container)
-		container.completeFunction(f)
-		if returns {
+		bund, rt := mainCircuit.compile(taks, container)
+		container.completeFunction(bund.fac())
+		if rt {
 			break
 		}
 	}
@@ -887,7 +911,7 @@ func (p *Program) GatesToR1CS(mGates []*Gate) (r1CS *R1CS) {
 	for _, v := range p.PublicInputs {
 		indexMap[v] = len(indexMap)
 	}
-	for _, v := range p.GetMainCircuit().Inputs {
+	for _, v := range p.GetMainCircuit().ArgumentIdentifiers {
 		if _, ex := indexMap[v]; ex {
 			continue
 		}
