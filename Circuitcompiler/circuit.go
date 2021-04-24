@@ -12,10 +12,9 @@ var variableIndicationSign = "@"
 type function struct {
 	Name string
 
-	value *big.Int
-
-	ArgumentIdentifiers    []string //the inputs of a circuit are circuits. Tis way we can pass functions as arguments
+	ArgumentIdentifiers    []returnTypes //the inputs of a circuit are circuits. Tis way we can pass functions as arguments
 	SNARK_Public_Statement []string
+	Inputs                 []returnTypes
 	Outputs                []returnTypes
 
 	//parent function. this function inherits all functions wich are accessible from his anchestors. Recent overload Late
@@ -26,8 +25,6 @@ type function struct {
 
 	//this will stay. the concept of a taskstack is relevant
 	taskStack *watchstack
-	//lets turn this into something we only need for the semantic check
-	constraintMap map[string]*Constraint
 }
 
 type returnTypes struct {
@@ -38,7 +35,7 @@ type returnTypes struct {
 
 func newCircuit(name string, context *function) *function {
 
-	c := &function{Context: context, Name: name, ArgumentIdentifiers: []string{}, constraintMap: make(map[string]*Constraint), taskStack: newWatchstack(), functions: make(map[string]*function)}
+	c := &function{Context: context, Name: name, ArgumentIdentifiers: []string{}, taskStack: newWatchstack(), functions: make(map[string]*function)}
 
 	return c
 }
@@ -46,23 +43,32 @@ func NewCircuit(name string, context *function) *function {
 	return &function{
 		Name:                name,
 		ArgumentIdentifiers: []string{},
+		Outputs:             []returnTypes{},
+		Inputs:              []returnTypes{},
 		Context:             context,
 		functions:           make(map[string]*function),
 		taskStack:           newWatchstack(),
-		constraintMap:       make(map[string]*Constraint),
 	}
 
 }
 
-func (this *function) hasEqualReturnTypeThen(that *function) (answer bool) {
-	if len(this.Outputs) != len(that.Outputs) {
-		return false
+func (this *function) description() string {
+	res := ""
+	for i := 0; i < len(this.ArgumentIdentifiers); i++ {
+		v, ex := this.functions[this.ArgumentIdentifiers[i]]
+		if !ex {
+			panic("cannot happen")
+		}
+		res += v.
+
+		if !v.hasEqualDescription(v2) {
+			return false
+		}
+
 	}
-	if len(this.Outputs) == 0 {
-		return true
-	}
+
 	for i := 0; i < len(this.Outputs); i++ {
-		l, r := this.Outputs[i], that.Outputs[i]
+		l, r := this.Outputs[i], thenThat.Outputs[i]
 		if !l.functionReturn && !r.functionReturn {
 			if l.typ.Type != r.typ.Type {
 				return false
@@ -70,7 +76,49 @@ func (this *function) hasEqualReturnTypeThen(that *function) (answer bool) {
 			continue
 		}
 		if l.functionReturn && r.functionReturn {
-			if !l.fkt.hasEqualReturnTypeThen(r.fkt) {
+			if !l.fkt.hasEqualDescription(r.fkt) {
+				return false
+			}
+			continue
+		}
+		return false
+	}
+}
+
+func (this *function) hasEqualDescription(thenThat *function) (answer bool) {
+	if len(this.ArgumentIdentifiers) != len(thenThat.ArgumentIdentifiers) {
+		return false
+	}
+	if len(this.Outputs) != len(thenThat.Outputs) {
+		return false
+	}
+
+	for i := 0; i < len(this.ArgumentIdentifiers); i++ {
+		v, ex := this.functions[this.ArgumentIdentifiers[i]]
+		if !ex {
+			panic("cannot happen")
+		}
+		v2, ex2 := thenThat.functions[thenThat.ArgumentIdentifiers[i]]
+		if !ex2 {
+			panic("cannot happen")
+		}
+
+		if !v.hasEqualDescription(v2) {
+			return false
+		}
+
+	}
+
+	for i := 0; i < len(this.Outputs); i++ {
+		l, r := this.Outputs[i], thenThat.Outputs[i]
+		if !l.functionReturn && !r.functionReturn {
+			if l.typ.Type != r.typ.Type {
+				return false
+			}
+			continue
+		}
+		if l.functionReturn && r.functionReturn {
+			if !l.fkt.hasEqualDescription(r.fkt) {
 				return false
 			}
 			continue
@@ -78,55 +126,6 @@ func (this *function) hasEqualReturnTypeThen(that *function) (answer bool) {
 		return false
 	}
 	return true
-}
-
-func (circ *function) contextCheckInputs(constraint *Constraint) {
-	for i := 0; i < len(constraint.Inputs); i++ {
-		circ.contextCheck(constraint.Inputs[i])
-	}
-}
-func (circ *function) contextCheck(constraint *Constraint) {
-
-	for i := 0; i < len(constraint.Inputs); i++ {
-		circ.contextCheck(constraint.Inputs[i])
-	}
-
-	if constraint.Output.Type&(DecimalNumberToken|Operator) != 0 {
-		return
-	}
-
-	switch constraint.Output.Type {
-	case ARGUMENT:
-		if _, ex := circ.constraintMap[constraint.Output.Identifier]; !ex {
-			panic(fmt.Sprintf("variable %s not found", constraint.Output.Identifier))
-		}
-	case VARIABLE_OVERLOAD:
-		panic("unexpected reach")
-	case FUNCTION_CALL:
-		//if _, ex := circ.findFunctionInBloodline(constraint.Output.identifier); !ex {
-		//	panic(fmt.Sprintf("function %s used but not declared", constraint.Output.identifier))
-		//}
-	case VARIABLE_DECLARE:
-		panic("unexpected reach")
-	case ARRAY_DECLARE:
-		panic("unexpected reach")
-	case IDENTIFIER_VARIABLE:
-		if _, ex := circ.findConstraintInBloodline(constraint.Output.Identifier); !ex {
-			if _, ex := circ.findFunctionInBloodline(constraint.Output.Identifier); !ex {
-				panic(fmt.Sprintf("variable %s used but not declared", constraint.Output.Identifier))
-			}
-		}
-	case ARRAY_CALL:
-		//we handy arra acces completely during execution now. some precompilation checks could be implemented however
-		//TODO rethink
-		//if _, ex := circ.findConstraintInBloodline(constraint.Output.identifier); !ex {
-		//	panic(fmt.Sprintf("array %s not declared", constraint.Output.identifier))
-		//}
-	default:
-
-	}
-
-	return
 }
 
 func (currentCircuit *function) findFunctionInBloodline(identifier string) (*function, bool) {
@@ -140,28 +139,6 @@ func (currentCircuit *function) findFunctionInBloodline(identifier string) (*fun
 
 }
 
-//TODO maybe I add context to every constraint as its done with the functions. in the ende everything is a function anyways
-func (currentCircuit *function) findConstraintInBloodline(identifier string) (*Constraint, bool) {
-	if currentCircuit == nil {
-		return nil, false
-	}
-	if con, ex := currentCircuit.constraintMap[identifier]; ex {
-		return con, true
-	}
-	return currentCircuit.Context.findConstraintInBloodline(identifier)
-
-}
-
-func (currentCircuit *function) getCircuitContainingConstraintInBloodline(identifier string) (*function, bool) {
-	if currentCircuit == nil {
-		return nil, false
-	}
-	if _, ex := currentCircuit.constraintMap[identifier]; ex {
-		return currentCircuit, true
-	}
-	return currentCircuit.Context.getCircuitContainingConstraintInBloodline(identifier)
-
-}
 func (currentCircuit *function) getCircuitContainingFunctionInBloodline(identifier string) (*function, bool) {
 	if currentCircuit == nil {
 		return nil, false
@@ -175,38 +152,42 @@ func (currentCircuit *function) getCircuitContainingFunctionInBloodline(identifi
 
 func (circ *function) flatCopy() (clone *function) {
 	if circ == nil {
-		panic("")
+		return nil
 	}
 	clone = newCircuit(circ.Name, circ.Context)
-	inputs := make([]string, len(circ.ArgumentIdentifiers))
-	copy(inputs, circ.ArgumentIdentifiers)
-	clone.ArgumentIdentifiers = inputs
-	//clone.functions = circ.functions
-	//clone.constraintMap = circ.constraintMap
+	argumentIdentifiers := make([]string, len(circ.ArgumentIdentifiers))
+
+	copy(argumentIdentifiers, circ.ArgumentIdentifiers)
+	clone.ArgumentIdentifiers = argumentIdentifiers
+
+	outputs := make([]returnTypes, len(circ.Outputs))
+	clone.Outputs = outputs
+
+	for k, v := range circ.Outputs {
+		outputs[k] = returnTypes{
+			functionReturn: v.functionReturn,
+			fkt:            v.fkt.flatCopy(),
+			typ:            v.typ,
+		}
+	}
+	inputs := make([]returnTypes, len(circ.Inputs))
+	clone.Inputs = inputs
+
+	for k, v := range circ.Inputs {
+		inputs[k] = returnTypes{
+			functionReturn: v.functionReturn,
+			fkt:            v.fkt.flatCopy(),
+			typ:            v.typ,
+		}
+	}
 	for k, v := range circ.functions {
 		f := v.flatCopy()
 		f.Context = clone
 		clone.functions[k] = f
 	}
-	for k, v := range circ.constraintMap {
-		clone.constraintMap[k] = v.clone()
-	}
+
 	clone.taskStack = circ.taskStack.clone()
 	return
-}
-
-func (circ *function) snapshot() (keys []string) {
-	for k, _ := range circ.constraintMap {
-		keys = append(keys, k)
-	}
-	return keys
-}
-func (circ *function) restore(keys []string) {
-	tmp := make(map[string]*Constraint)
-	for _, k := range keys {
-		tmp[k] = circ.constraintMap[k]
-	}
-	circ.constraintMap = tmp
 }
 
 func (currentCircuit *function) checkStaticCondition(c *Constraint) (isStatic, isSatisfied bool) {
@@ -339,49 +320,9 @@ func (from Token) primitiveReturnfunction() (gives *function) {
 	return rmp
 }
 
-func splitAtIfEnd(cs []*Constraint) (inside, outside []*Constraint) {
-
-	for i, v := range cs {
-		if v.Output.Type == IF_ELSE_CHAIN_END {
-			return cs[:i], cs[i:]
-		}
-	}
-	panic("unexpected reach")
-	return inside, outside
-}
-
-func splitAtNestedEnd(cs []*Constraint) (insideNested, outsideNested []*Constraint, success bool) {
-
-	ctr := 0
-
-	for i, c := range cs {
-		if c.Output.Type == ELSE || c.Output.Type == FOR || c.Output.Type == FUNCTION_DEFINE || c.Output.Type == IF {
-			ctr++
-		}
-		if c.Output.Type == NESTED_STATEMENT_END {
-			ctr--
-		}
-		if ctr == 0 {
-			if i == len(cs)-1 {
-				return cs[0:i], outsideNested, true
-			}
-			return cs[0:i], cs[i+1:], true
-		}
-	}
-	return
-}
-
 func (currentCircuit *function) getFunctionInputs() (oldInputs []*function) {
 	for _, name := range currentCircuit.ArgumentIdentifiers {
 		oldInputs = append(oldInputs, currentCircuit.functions[name])
-	}
-	return
-
-}
-func (currentCircuit *function) setFunctionInputs(inputs []string, fktInputs []*function) {
-	currentCircuit.ArgumentIdentifiers = inputs
-	for i, name := range inputs {
-		currentCircuit.functions[name] = fktInputs[i]
 	}
 	return
 
@@ -393,7 +334,15 @@ func (currentCircuit *function) getsLoadedWith(newInputs []*function) (allArgume
 		panic(fmt.Sprintf("%v takes %v arguments, got %v", currentCircuit.Name, len(currentCircuit.ArgumentIdentifiers), len(newInputs)))
 	}
 	for i := 0; i < len(newInputs); i++ {
-		currentCircuit.functions[currentCircuit.ArgumentIdentifiers[i]] = newInputs[i]
+		if v, ex := currentCircuit.functions[currentCircuit.ArgumentIdentifiers[i]]; ex {
+			if !v.hasEqualDescription(newInputs[i]) {
+				panic("assignment missmatch")
+			}
+			currentCircuit.functions[currentCircuit.ArgumentIdentifiers[i]] = newInputs[i]
+			continue
+		}
+		panic("cannot happen")
+
 	}
 	currentCircuit.ArgumentIdentifiers = currentCircuit.ArgumentIdentifiers[len(newInputs):]
 	return

@@ -314,7 +314,6 @@ func (from factor) primitiveReturnfunction() (gives *function) {
 
 	if from.Typ.Type == DecimalNumberToken {
 		c := from.Typ.primitiveReturnfunction()
-		c.value = from.multiplicative
 		return c
 	}
 	if from.multiplicative == nil || from.multiplicative.Cmp(bigOne) == 0 {

@@ -30,7 +30,7 @@ func emptyRets() ([]returnTyped, bool) {
 	return rets(nil, function{}), false
 }
 func (f bundle) fac() factors {
-	if len(f) != 0 {
+	if len(f) == 0 {
 		return nil
 	}
 	return f[0].facs
@@ -43,7 +43,7 @@ func (f bundle) fac() factors {
 func (currentCircuit *function) compile(currentConstraint *Constraint, gateCollector *gateContainer) (returnBundle bundle, reachedReturn bool) {
 	if currentConstraint.Output.Type&Types != 0 {
 		return rets(Token{
-			Type:       ARGUMENT,
+			Type:       currentConstraint.Output.Type,
 			Identifier: currentConstraint.Output.Identifier,
 		}.toFactors(), function{}), false
 	}
@@ -99,9 +99,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	case UNASIGNEDVAR:
 		switch len(currentConstraint.Inputs) {
 		case 0:
-			if con, ex := currentCircuit.constraintMap[currentConstraint.Output.Identifier]; ex {
-				return currentCircuit.compile(con, gateCollector)
-			}
+
 		case 1:
 			return currentCircuit.compile(currentConstraint.Inputs[0], gateCollector)
 		case 3:
@@ -117,8 +115,12 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		}
 		return r, true
 	case VARIABLE_OVERLOAD:
+		var bund bundle
+		for _, v := range currentConstraint.Inputs[1].Inputs {
+			re, _ := currentCircuit.compile(v, gateCollector)
+			bund = append(bund, re...)
+		}
 
-		bund, _ := currentCircuit.compile(currentConstraint.Inputs[1], gateCollector)
 		if len(bund) != len(currentConstraint.Inputs[0].Inputs) {
 			panic("assignment missmatch")
 		}
@@ -144,13 +146,17 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				panic("does not exist")
 			}
 
+			var assign *function
 			if bund[i].facs == nil {
-				context.functions[toOverloadIdentifier] = &bund[i].preloadedFunction
-				continue
+				assign = &bund[i].preloadedFunction
+			} else {
+				assign = bund[i].facs.primitiveReturnfunction()
 			}
 			//overwrite
-
-			context.functions[toOverloadIdentifier] = bund[i].facs.primitiveReturnfunction()
+			if !context.hasEqualDescription(assign) {
+				panic("cannot assign")
+			}
+			context.functions[toOverloadIdentifier] = assign
 		}
 		return emptyRets()
 	case ARRAY_CALL:
@@ -341,8 +347,8 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				return rets(nil, *nxt), false
 			}
 			rr, _ := nxt.execute(gateCollector)
-			facs, fkt := rr[0].facs, rr[0].preloadedFunction
-			return rets(facs, fkt), false
+
+			return rr, false
 		}
 	default:
 	}

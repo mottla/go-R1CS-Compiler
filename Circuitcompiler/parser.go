@@ -314,7 +314,7 @@ func (p *Parser) prepareFunctionHeader(current *function, stack []Token) {
 	if stack[1].Type == FUNCTION_DEFINE {
 		//TODO rethink what context a function in a function header has
 		next := NewCircuit(stack[0].Identifier, nil)
-		p.PrepareFunction(current, stack[2:])
+		p.PrepareFunction(next, stack[2:])
 		current.functions[stack[0].Identifier] = next
 		return
 	}
@@ -552,9 +552,9 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) (ret []
 		if !success {
 			p.error("closing brackets missing")
 		}
-		if b, _, err := isVariableAssignment(l); !b {
-			p.error(err)
-		}
+		//if b, _, err := isVariableAssignment(l); !b {
+		//	p.error(err)
+		//}
 
 		overload, expr := splitTokensAtFirstString(l, "=")
 
@@ -596,38 +596,43 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) (ret []
 		}
 
 		overload, expr := splitTokensAtFirstString(l, "=")
-		ov := &Constraint{
+		toOverload := &Constraint{
 			Output: Token{
-				Type: VARIABLE_OVERLOAD,
+				Type: UNASIGNEDVAR,
+			},
+		}
+		overloadWith := &Constraint{
+			Output: Token{
+				Type: RETURN,
 			},
 		}
 		varConst := &Constraint{
 			Output: Token{
 				Type: VARIABLE_OVERLOAD,
 			},
-			Inputs: []*Constraint{ov},
+			Inputs: []*Constraint{toOverload, overloadWith},
 		}
 
 		for arguments, remm := splitAtFirstHighestStringType(overload, ","); ; arguments, remm = splitAtFirstHighestStringType(remm, ",") {
 			arguments = removeLeadingAndTrailingBreaks(arguments)
 
 			//the first input is the thing to overwrite
-			p.parseExpression(overload, ov)
-			if _, ex := currentCircuit.findFunctionInBloodline(overload[0].Identifier); !ex {
-				p.error(fmt.Sprintf("variable %s not declared", overload[0].Identifier))
+			p.parseExpression(arguments, toOverload)
+			if _, ex := currentCircuit.findFunctionInBloodline(arguments[0].Identifier); !ex {
+				p.error(fmt.Sprintf("variable %s not declared", arguments[0].Identifier))
 			}
 
 			if remm == nil {
 				break
 			}
 		}
-
+		currentCircuit.taskStack.add(varConst)
 		//before we parse the rhs, finish of the rest
 		p.NEWPreCompile(currentCircuit, r)
 
 		//the second input is the  'new to assign' expression
-		p.parseExpression(expr[1:], varConst)
-		currentCircuit.taskStack.add(varConst)
+		p.parseExpression(expr[1:], overloadWith)
+
 		return
 	case BOOL:
 		//TODO i should stop treating arrays as something speacial, they are just
@@ -815,40 +820,6 @@ func combineString(in []Token) string {
 	return out
 }
 
-func isArrayAssignment(stx []Token) (yn bool, err string) {
-	if len(stx) < 5 {
-		return false, "array assignment needs min 3 tokens: a = b"
-	}
-	if stx[0].Type != IDENTIFIER_VARIABLE {
-		return false, "identifier expected"
-	}
-
-	if stx[1].Identifier != "[" || stx[2].Identifier != "]" {
-		return false, "brackets  expected"
-	}
-	if stx[3].Type != AssignmentOperatorToken {
-		return false, "assignment  expected"
-	}
-	if stx[4].Identifier != "{" {
-		return false, "assignment  expected"
-	}
-
-	return true, ""
-}
-
-func isVariableAssignment(stx []Token) (yn bool, rem []Token, err string) {
-	if len(stx) < 3 {
-		return false, nil, "assignment needs min 3 tokens: a = b"
-	}
-	if stx[0].Type != IDENTIFIER_VARIABLE {
-		return false, nil, "identifier expected"
-	}
-	if stx[1].Type != AssignmentOperatorToken {
-		return false, nil, "assignment  expected"
-	}
-	return true, stx[2:], ""
-}
-
 func (p *Parser) stackAllTokens() []Token {
 	var stack []Token
 	for tok := p.nextToken(); tok.Type != EOF; tok = p.nextToken() {
@@ -953,20 +924,6 @@ func splitAtFirstHighestTokenType(in []Token, splitAt TokenType) (cutLeft []Toke
 				return in[:i], in[i], cutRight
 			}
 			return in[:i], in[i], in[i+1:]
-		}
-	}
-	return nil, Token{}, nil
-}
-
-//splitTokensAtFirstString takes takes a string S and a token array and splits st: abScd -> ( ab , Scd )
-//if S does not occur it returns ( in , []Tokens{} )
-func SplitAtFirstTokenType(in []Token, splitAt TokenType) (cutLeft []Token, tok Token, cutRight []Token) {
-	for i := 0; i < len(in); i++ {
-		if in[i].Type == splitAt {
-			if i == len(in)-1 {
-				return in[:i], in[i], cutRight
-			}
-			return in[:i], in[i], in[i:]
 		}
 	}
 	return nil, Token{}, nil
