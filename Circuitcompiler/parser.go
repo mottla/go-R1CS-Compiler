@@ -77,17 +77,6 @@ func NewParse(code string) (p *Program) {
 // write some pattern matcher
 // var identifier = identifier|array
 
-func ArrayStringBuild(in []int64, res string, coll *[]string) {
-	if len(in) == 0 {
-		*coll = append(*coll, res)
-		return
-	}
-	for j := int64(0); j < in[0]; j++ {
-		str := fmt.Sprintf("%v[%v]", res, j)
-		ArrayStringBuild(in[1:], str, coll)
-	}
-}
-
 // epx := (exp) | exp Operator exp | identifier(arg) | identifier | Number | identifier[exp]
 //arg := exp | arg,exp
 func (p *Parser) parseExpression(stack []Token, constraint *Constraint) {
@@ -376,7 +365,7 @@ func (p *Parser) prepareReturns(current *function, stack []Token) {
 
 }
 
-func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) (ret []Token) {
+func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 
 	tokens = removeLeadingAndTrailingBreaks(tokens)
 
@@ -476,7 +465,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) (ret []
 		}
 		currentCircuit.taskStack.add(ifConstraint)
 
-		condition, rest := splitTokensAtFirstString(tokens, "{")
+		condition, rest := splitAtFirstHighestStringType(tokens, "{")
 
 		p.parseExpression(condition[1:], ifConstraint)
 
@@ -507,9 +496,13 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) (ret []
 		}
 		currentCircuit.taskStack.add(ifConstraint)
 
-		condition, rest := splitTokensAtFirstString(tokens, "{")
+		condition, rest := splitAtFirstHighestStringType(tokens, "{")
 
-		p.parseExpression(condition[1:], ifConstraint)
+		if len(condition) > 1 && condition[1].Type == IF {
+			p.parseExpression(condition[2:], ifConstraint)
+		} else {
+			p.error("invalid else if")
+		}
 
 		ifStatement, rest, success := splitAtClosingSwingBrackets(rest)
 		if !success {
@@ -709,7 +702,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) (ret []
 	default:
 		p.error("%v", tokens)
 	}
-	return ret
+	return
 }
 
 func (p *Parser) loadDimension(toks []Token, in []int64) (res []int64) {
@@ -995,17 +988,6 @@ func splitAtClosingStringBrackets(in []Token, open, close string) (cutLeft, cutR
 	return nil, nil, false
 }
 
-func (p *Parser) cutAtSemiCol(in []Token) (cut []Token) {
-	if len(in) == 0 {
-		return
-	}
-	if in[len(in)-1].Identifier == ";" {
-		return in[:len(in)-1]
-	}
-
-	return p.cutAtSemiCol(in[:len(in)-1])
-}
-
 // Constraint is the data structure of a flat code operation
 type Constraint struct {
 	Output Token
@@ -1028,10 +1010,14 @@ func (c *Constraint) clone() *Constraint {
 	}
 }
 
-func (c Constraint) PrintConstraintTree() string {
-	str := c.String()
-	for _, v := range c.Inputs {
-		str += v.PrintConstraintTree()
+//outdated.. delete soon
+func ArrayStringBuild(in []int64, res string, coll *[]string) {
+	if len(in) == 0 {
+		*coll = append(*coll, res)
+		return
 	}
-	return str
+	for j := int64(0); j < in[0]; j++ {
+		str := fmt.Sprintf("%v[%v]", res, j)
+		ArrayStringBuild(in[1:], str, coll)
+	}
 }

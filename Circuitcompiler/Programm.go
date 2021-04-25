@@ -178,9 +178,9 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		//	panic(fmt.Sprintf("array %s not declared", resolvedName))
 		//}
 	case IF_FUNCTION_CALL:
-		var ifElseCircuits *function
-		var ex bool
-		if ifElseCircuits, ex = currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); !ex {
+
+		ifElseCircuits, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier)
+		if !ex {
 			panic(fmt.Sprintf("function %s not declared", currentConstraint.Output.Identifier))
 		}
 
@@ -192,39 +192,29 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			//else condition
 			if task.Inputs == nil || len(task.Inputs) == 0 {
 
-				re, _ := ifElseCircuits.compile(&Constraint{
-					Output: Token{
-						Type:       FUNCTION_CALL,
-						Identifier: task.Output.Identifier,
-					},
-				}, gateCollector)
+				bund, retu := ifElseCircuits.execute(gateCollector)
 				if result == nil {
-					rets(re.fac(), function{})
+					return bund, retu
 				}
 
-				var composed = re.fac().primitiveReturnfunction()
+				var composed = bund.fac().primitiveReturnfunction()
 
 				for _, negatedCondition := range negatedConditions {
 					composed = combineFunctions("*", composed, negatedCondition)
 				}
-				bund, _ := composed.execute(gateCollector)
+				bund, _ = composed.execute(gateCollector)
 
-				return rets(addFactors(result, bund.fac()), function{}), false
+				return rets(addFactors(result, bund.fac()), function{}), retu
 			}
-			if isStat, isSat := currentCircuit.checkStaticCondition(task.Inputs[0]); isSat && isStat {
+			if isStat, isSat := currentCircuit.checkStaticCondition(currentConstraint.Inputs[0]); isSat && isStat {
 
-				bund, _ := ifElseCircuits.compile(&Constraint{
-					Output: Token{
-						Type:       FUNCTION_CALL,
-						Identifier: task.Output.Identifier,
-					},
-				}, gateCollector)
+				bund, retu := ifElseCircuits.execute(gateCollector)
 				if result == nil {
-					return rets(bund.fac(), function{}), false
+					return bund, retu
 				}
 				panic("not done yet")
 
-				return rets(addFactors(bund.fac(), result), function{}), false
+				return rets(addFactors(bund.fac(), result), function{}), retu
 			} else if !isStat {
 
 				//the condition
@@ -284,7 +274,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				return emptyRets()
 			}
 			//prepare input number Z
-			arg := currentConstraint.Inputs[0].clone()
+			arg := currentConstraint.Inputs[0]
 			currentCircuit.SPLIT(true, arg, gateCollector)
 			return emptyRets()
 
@@ -292,8 +282,8 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			if len(currentConstraint.Inputs) != 2 {
 				panic("addition constraint requires 2 arguments")
 			}
-			leftClone := currentConstraint.Inputs[0].clone()
-			rightClone := currentConstraint.Inputs[1].clone()
+			leftClone := currentConstraint.Inputs[0]
+			rightClone := currentConstraint.Inputs[1]
 			leftFactors, _ := currentCircuit.compile(leftClone, gateCollector)
 			rightFactors, _ := currentCircuit.compile(rightClone, gateCollector)
 			commonExtracted, extractedLeft, extractedRight := extractConstant(leftFactors.fac(), rightFactors.fac())
@@ -310,8 +300,8 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			if len(currentConstraint.Inputs) != 2 {
 				panic("equality constraint requires 2 arguments")
 			}
-			leftClone := currentConstraint.Inputs[0].clone()
-			rightClone := currentConstraint.Inputs[1].clone()
+			leftClone := currentConstraint.Inputs[0]
+			rightClone := currentConstraint.Inputs[1]
 			leftFactors, _ := currentCircuit.compile(leftClone, gateCollector)
 			rightFactors, _ := currentCircuit.compile(rightClone, gateCollector)
 			gateCollector.Add(equalityGate(leftFactors.fac(), rightFactors.fac()))

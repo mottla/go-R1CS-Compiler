@@ -1,8 +1,5 @@
 package Circuitcompiler
 
-// This package provides a Lexer that GlobalFunction similarly to Rob Pike's discussion
-// about lexer design in this [talk](https://www.youtube.com/watch?v=HxaD_trXwRE).
-
 import (
 	"errors"
 	"fmt"
@@ -29,6 +26,7 @@ type Token struct {
 	isArray    bool
 	isArgument bool
 	dimensions []int64
+	readInLine int
 }
 
 func (ch Token) printType() string {
@@ -284,8 +282,12 @@ func (l *Lexer) Emit(t TokenType) {
 	tok := Token{
 		Type:       t,
 		Identifier: l.Current(),
+		readInLine: l.currentLine,
 	}
 	l.tokens <- tok
+	if tok.Identifier == "\n" {
+		l.currentLine = l.currentLine + 1
+	}
 	l.start = l.position
 	l.rewind.clear()
 }
@@ -328,9 +330,7 @@ func (l *Lexer) Rewind() {
 			l.position = l.start
 		}
 	}
-	if r == '\n' {
-		l.currentLine--
-	}
+
 }
 
 // Next pulls the next rune from the Lexer and returns it, moving the position
@@ -348,9 +348,7 @@ func (l *Lexer) Next() rune {
 	}
 	l.position += s
 	l.rewind.push(r)
-	if r == '\n' {
-		l.currentLine++
-	}
+
 	return r
 }
 
@@ -413,7 +411,7 @@ func isLetter(ch rune) bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
 }
 func isDecimalDigit(ch rune) bool {
-	return (ch >= '0' && ch <= '9')
+	return ch >= '0' && ch <= '9'
 }
 func isOperator(ch rune) bool {
 	return strings.ContainsRune(operationTokens, ch)

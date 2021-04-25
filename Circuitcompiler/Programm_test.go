@@ -5,34 +5,34 @@ import (
 	"testing"
 )
 
-func iterate(fromX, toX int, call func(int)) {
-
-	if fromX == toX {
-
-		return
-	}
-	call(fromX)
-	iterate(fromX+1, toX, call)
-
-	return
-}
-func TestFunction_SPLIT(t *testing.T) {
-
-	a, b := uint8(34), uint8(210)
-	fmt.Println(a * b)
-
-}
-func TestCombineInputs(t *testing.T) {
-	ctr := 0
-	var ff = func(k int) {
-		var EQ = func(i int) {
-			ctr++
+func TestNIfProgram(t *testing.T) {
+	code := `
+	func main(x bool,y field)(field) {
+		if 2>3 {
+			return x*x
 		}
-		iterate(0, 9, EQ)
+		if 2>3 {
+			return y*y
+		}else if 5!=5{
+			return x*x*x
+		}else if 5==5{
+			return y*y*y
+		}
+		return x*x*x
 	}
-	iterate(0, 9, ff)
-	fmt.Print(ctr)
-	return
+
+`
+	p := NewParse(code)
+	container := p.Execute()
+
+	gates := container.OrderedGates()
+	fmt.Println("\n generating R1CS")
+	r1cs := p.GatesToR1CS(gates)
+	fmt.Printf("number of gates %v, witness length %v \n ", r1cs.NumberOfGates, r1cs.WitnessLength)
+	//
+	fmt.Println(r1cs.L)
+	fmt.Println(r1cs.R)
+	fmt.Println(r1cs.O)
 }
 
 //func TestCorrectness(t *testing.T) {

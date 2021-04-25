@@ -17,7 +17,7 @@ var Field = PrepareFields(bn256.Order)
 // Transpose transposes the *big.Int matrix
 func Transpose(matrix []Poly) []Poly {
 	r := make([]Poly, len(matrix[0]))
-	for x, _ := range r {
+	for x := range r {
 		r[x] = make(Poly, len(matrix))
 	}
 	for y, s := range matrix {

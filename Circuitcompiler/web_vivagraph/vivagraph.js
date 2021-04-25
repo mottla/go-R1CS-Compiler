@@ -1936,7 +1936,7 @@ function Vector3d(x, y, z) {
     this.y = typeof y === 'number' ? y : 0;
     this.z = typeof z === 'number' ? z : 0;
   }
-};
+}
 
 Vector3d.prototype.reset = function () {
   this.x = this.y = this.z = 0;
@@ -2209,7 +2209,7 @@ function physicsSimulator(settings) {
       springForce.update(springs[i]);
     }
   }
-};
+}
 
 },{"./lib/bounds":16,"./lib/createBody":17,"./lib/dragForce":18,"./lib/eulerIntegrator":19,"./lib/spring":20,"./lib/springForce":21,"ngraph.events":7,"ngraph.expose":8,"ngraph.merge":13,"ngraph.quadtreebh":22}],16:[function(require,module,exports){
 module.exports = function (bodies, settings) {
@@ -2390,7 +2390,7 @@ function Spring(fromBody, toBody, length, coeff, weight) {
     this.coeff = coeff;
 
     this.weight = typeof weight === 'number' ? weight : 1;
-};
+}
 
 },{}],21:[function(require,module,exports){
 /**
@@ -3322,7 +3322,7 @@ function operations() {
             }
         }
     };
-};
+}
 
 },{}],34:[function(require,module,exports){
 /**

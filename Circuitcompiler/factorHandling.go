@@ -253,7 +253,7 @@ func addFactors(leftFactors, rightFactors factors) factors {
 	}
 
 	if len(res) == 0 {
-		res = []factor{factor{
+		res = []factor{{
 			Typ: Token{
 				Type:       DecimalNumberToken,
 				Identifier: "0",
@@ -322,17 +322,17 @@ func (from factor) primitiveReturnfunction() (gives *function) {
 			Identifier: "",
 		},
 		Inputs: []*Constraint{
-			&Constraint{
+			{
 				Output: Token{
 					Type:       ArithmeticOperatorToken,
 					Identifier: "*",
 				},
-			}, &Constraint{
+			}, {
 				Output: Token{
 					Type:       DecimalNumberToken,
 					Identifier: from.multiplicative.String(),
 				},
-			}, &Constraint{
+			}, {
 				Output: from.Typ,
 			},
 		},
@@ -386,25 +386,25 @@ func combineFunctions(operation string, a, b *function) *function {
 	//}
 
 	rmp := NewCircuit("", nil)
-	rmp.functions[a.Name] = (a)
-	rmp.functions[b.Name] = (b)
+	rmp.functions[a.Name] = a
+	rmp.functions[b.Name] = b
 	rmp.taskStack.add(&Constraint{
 		Output: Token{
 			Type:       RETURN,
 			Identifier: "", //fmt.Sprintf("%v%v%v",a.Name,operation,b.Name),
 		},
 		Inputs: []*Constraint{
-			&Constraint{
+			{
 				Output: Token{
 					Type:       ArithmeticOperatorToken,
 					Identifier: operation,
 				},
-			}, &Constraint{
+			}, {
 				Output: Token{
 					Type:       FUNCTION_CALL,
 					Identifier: a.Name,
 				},
-			}, &Constraint{
+			}, {
 				Output: Token{
 					Type:       FUNCTION_CALL,
 					Identifier: b.Name,

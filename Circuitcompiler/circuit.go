@@ -192,7 +192,7 @@ func (currentCircuit *function) checkStaticCondition(c *Constraint) (isStatic, i
 		}
 		break
 	default:
-		panic(c.Inputs[0].Output)
+		panic(fmt.Sprintf("unknown operation %v", c.Inputs[0].Output.Identifier))
 
 	}
 	return true, true

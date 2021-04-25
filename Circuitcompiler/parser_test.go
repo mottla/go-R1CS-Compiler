@@ -71,7 +71,7 @@ func TestNewParse2(t *testing.T) {
 
 	func main(x bool,y field)(field) {
 		#func m5(x bool)(bool){return mul(5,x)}
-		x,x = mul2(x,x)		
+		x,x = mul2(x,x)	
 		return mul3(x,mul)
 	}
 

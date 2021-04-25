@@ -161,7 +161,7 @@ func (root *AvlNode) AllNodes(t *[]Entry) {
 	if root.right != nil {
 		root.right.AllNodes(t)
 	}
-	(*t) = append((*t), Entry{
+	*t = append(*t, Entry{
 		Key:   root.Key(),
 		Value: root.Value(),
 	})

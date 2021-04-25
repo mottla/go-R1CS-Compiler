@@ -230,7 +230,7 @@ function startMultiSelect(graph, renderer, layout) {
         graph.forEachNode(higlightIfInside);
         renderer.rerender();
 
-        return;
+
 
         function higlightIfInside(node) {
             var nodeUI = graphics.getNodeUI(node.id);
