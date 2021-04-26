@@ -140,10 +140,6 @@ func (circ *function) flatCopy() (clone *function) {
 }
 
 func (currentCircuit *function) checkStaticCondition(c *Constraint) (isStatic, isSatisfied bool) {
-	//else condition
-	if len(c.Inputs) == 0 {
-		return true, true
-	}
 
 	var factorsA, factorsB bundle
 	var A, B *big.Int

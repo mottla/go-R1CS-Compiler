@@ -69,14 +69,19 @@ var arithmeticOperator = []string{"-", "+", "*", "/", "**"}
 var booleanOperator = []string{"||", "&&"}
 var bitOperator = []string{">>", "<<", "<<<", ">>>", "|", "^", "&"}
 var binaryComperator = []string{"==", "!=", ">", ">=", "<", "<="}
+var predeclaredFunctions = []string{"SPLIT", "equal ", "BREAK", "ADD"}
 
 //var unaryOperator = []string{"++", "--"}
 
 var operationMap = make(map[string]TokenType)
+var predeclaredFunctionsMap = make(map[string]bool)
 var keyWordMap map[string]TokenType
 
 func init() {
 
+	for _, v := range predeclaredFunctions {
+		predeclaredFunctionsMap[v] = true
+	}
 	for _, v := range assignmentOperator {
 		operationMap[v] = AssignmentOperatorToken
 	}
@@ -144,8 +149,6 @@ const (
 	IF
 	ELSE
 	FOR
-	NESTED_STATEMENT_END
-	IF_ELSE_CHAIN_END
 	RETURN
 	FIELD
 	BOOL
@@ -176,8 +179,6 @@ func (ch TokenType) String() string {
 		return "BinaryComperatorToken"
 	case IMPORT:
 		return "import"
-	case NESTED_STATEMENT_END:
-		return "For ends"
 	case SyntaxToken:
 		return "syntaxToken"
 	case DecimalNumberToken:

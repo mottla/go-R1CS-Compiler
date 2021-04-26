@@ -295,7 +295,7 @@ func (p *Parser) prepareFunctionHeader(current *function, stack []Token) {
 		//	}
 		//	return
 		//}
-		current.Inputs = append(current.Outputs, returnTypes{
+		current.Inputs = append(current.Inputs, returnTypes{
 			typ: tok,
 		})
 		current.functions[stack[0].Identifier] = tok.primitiveReturnfunction()
@@ -306,7 +306,7 @@ func (p *Parser) prepareFunctionHeader(current *function, stack []Token) {
 		next := NewCircuit(stack[0].Identifier, nil)
 		p.PrepareFunction(next, stack[2:])
 		current.functions[stack[0].Identifier] = next
-		current.Inputs = append(current.Outputs, returnTypes{
+		current.Inputs = append(current.Inputs, returnTypes{
 			functionReturn: true,
 			fkt:            next,
 		})
@@ -318,7 +318,7 @@ func (p *Parser) prepareFunctionHeader(current *function, stack []Token) {
 	//then this primitive split does not work
 
 	//handle what comes after the function
-	p.error("not defined")
+	p.error("not defined type %v", stack[1].Identifier)
 	return
 
 }
@@ -415,6 +415,9 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 		if _, ex := currentCircuit.functions[fkt.Name]; ex {
 			p.error(fmt.Sprintf("function %s already declared", fkt.Name))
 		}
+		if _, ex := predeclaredFunctionsMap[fkt.Name]; ex {
+			panic(fmt.Sprintf("cannot redeclare predefined function %s ", fkt.Name))
+		}
 		//we add the function
 		currentCircuit.functions[fkt.Name] = fkt
 		p.Assert("(", tokens[2])
@@ -452,64 +455,85 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 	case IF: //if a<b { }   if (a<b) {
 
 		//we add a constraint, its name references to the function body, its inputs hold the condition
-		identifier := fmt.Sprintf("if%v", currentCircuit.taskStack.len())
+		identifierLeadingToTheStatement := fmt.Sprintf("if%v", currentCircuit.taskStack.len())
 
-		ifFunction := NewCircuit(identifier, currentCircuit)
-		currentCircuit.functions[identifier] = ifFunction
+		ifFunction := NewCircuit(identifierLeadingToTheStatement, currentCircuit)
+
+		//we are sure that there is no collision, because the name is sureley uneque
+		currentCircuit.functions[identifierLeadingToTheStatement] = ifFunction
 
 		ifConstraint := &Constraint{
 			Output: Token{
 				Type:       IF_FUNCTION_CALL,
-				Identifier: identifier,
+				Identifier: identifierLeadingToTheStatement,
 			},
 		}
 		currentCircuit.taskStack.add(ifConstraint)
 
-		condition, rest := splitAtFirstHighestStringType(tokens, "{")
-
-		p.parseExpression(condition[1:], ifConstraint)
-
-		ifStatement, rest, success := splitAtClosingSwingBrackets(rest)
-		if !success {
-			panic("closing brackets missing")
+		var fk = func(t []Token) (condition, statement, rest []Token, success bool) {
+			condition, rest = splitAtFirstHighestStringType(t, "{")
+			statement, rest, success = splitAtClosingSwingBrackets(rest)
+			if !success {
+				panic("")
+			}
+			if removeLeadingBreaks(rest)[0].Type != ELSE {
+				return condition, statement, rest, false
+			}
+			return
 		}
-		p.NEWPreCompile(ifFunction, ifStatement)
-		p.NEWPreCompile(currentCircuit, rest)
+
+		statements := [][]Token{}
+		conditions := [][]Token{}
+		c, s, r, contin := fk(tokens)
+		for ; ; c, s, r, contin = fk(r) {
+			statements = append(statements, s)
+			conditions = append(conditions, c)
+
+			if !contin {
+				break
+			}
+		}
+
+		p.NEWPreCompile(currentCircuit, r)
+		for i, v := range statements {
+			identifierLeadingToTheStatement := fmt.Sprintf("ifStatmement%v", ifFunction.taskStack.len())
+			ifConstraint := &Constraint{
+				Output: Token{
+					Type:       IF,
+					Identifier: identifierLeadingToTheStatement,
+				},
+			}
+			if i == 0 {
+				p.AssertTypes(conditions[i], IF)
+				p.parseExpression(conditions[0][1:], ifConstraint)
+			} else if i < len(statements)-1 {
+				p.AssertTypes(conditions[i], ELSE, IF)
+				p.parseExpression(conditions[i][2:], ifConstraint)
+			} else {
+				if len(conditions[i]) > 1 {
+					p.AssertTypes(conditions[i], ELSE, IF)
+					p.parseExpression(conditions[i][2:], ifConstraint)
+				} else {
+					p.AssertTypes(conditions[i], ELSE)
+					ifConstraint.Output.Type = ELSE
+					//no condition
+				}
+			}
+
+			tsk := NewCircuit(identifierLeadingToTheStatement, currentCircuit)
+
+			//we are sure that there is no collision, because the name is sureley uneque
+			ifFunction.functions[identifierLeadingToTheStatement] = tsk
+
+			ifFunction.taskStack.add(ifConstraint)
+
+			p.NEWPreCompile(tsk, v)
+		}
+
 		return
 	case ELSE:
+		p.error("else needs a proceeding if statement")
 
-		if ex, lastTask := currentCircuit.taskStack.PeekLast(); !ex || lastTask.Output.Type != IF_FUNCTION_CALL {
-			p.error("if statement must proceed else!")
-		}
-
-		identifier := fmt.Sprintf("else%v", currentCircuit.taskStack.len())
-
-		elseFunction := NewCircuit(identifier, currentCircuit)
-
-		currentCircuit.functions[identifier] = elseFunction
-
-		ifConstraint := &Constraint{
-			Output: Token{
-				Type:       IF_FUNCTION_CALL,
-				Identifier: identifier,
-			},
-		}
-		currentCircuit.taskStack.add(ifConstraint)
-
-		condition, rest := splitAtFirstHighestStringType(tokens, "{")
-
-		if len(condition) > 1 && condition[1].Type == IF {
-			p.parseExpression(condition[2:], ifConstraint)
-		} else {
-			p.error("invalid else if")
-		}
-
-		ifStatement, rest, success := splitAtClosingSwingBrackets(rest)
-		if !success {
-			panic("closing brackets missing")
-		}
-		p.NEWPreCompile(elseFunction, ifStatement)
-		p.NEWPreCompile(currentCircuit, rest)
 		return
 	case FOR:
 		// TODO for loops a just syntactic suggar for a recursive function
@@ -522,7 +546,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 		}
 		// a = 4;
 		//l, r := splitTokensAtFirstString(tokens[2:], ";")
-		//if r[0].identifier != ";" {
+		//if r[0].identifierLeadingToTheStatement != ";" {
 		//	p.error("';' expected, got %v", r[0])
 		//}
 		//r = r[1:]
@@ -532,7 +556,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 		//varConst := &Constraint{
 		//	Output: Token{
 		//		Type:  VARIABLE_DECLARE,
-		//		identifier: l[1].identifier,
+		//		identifierLeadingToTheStatement: l[1].identifierLeadingToTheStatement,
 		//	},
 		//}
 		//p.parseExpression(l[3:], varConst)
@@ -578,12 +602,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 		if !success {
 			p.error("closing brackets missing")
 		}
-		//p.statementMode(l)
-		p.constraintChan <- &Constraint{
-			Output: Token{
-				Type: NESTED_STATEMENT_END,
-			},
-		}
+
 		//p.statementMode(r)
 		break
 	case IDENTIFIER_VARIABLE: //variable overloading -> a = a * 4
@@ -689,7 +708,9 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 			Output: tokens[0],
 		}
 		if _, ex := currentCircuit.findFunctionInBloodline(tokens[0].Identifier); !ex {
-			panic(fmt.Sprintf("function %s not declared", tokens[0].Identifier))
+			if _, ex = predeclaredFunctionsMap[tokens[0].Identifier]; ex {
+				panic(fmt.Sprintf("function %s not declared", tokens[0].Identifier))
+			}
 		}
 
 		//todo.. what if we call a function with a function call as argument, of a function that has not yet been declared
@@ -783,6 +804,13 @@ func (p *Parser) AssertIdentifiedType(typ TokenType, tok Token) {
 	}
 	if tok.Type != typ {
 		p.error("expected type %v, got %v", typ, tok.Type)
+	}
+}
+func (p *Parser) AssertTypes(toks []Token, types ...TokenType) {
+	for i, v := range types {
+		if toks[i].Type != v {
+			p.error("expected %v, got %v", toks[:len(types)], types)
+		}
 	}
 }
 

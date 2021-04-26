@@ -42,10 +42,7 @@ func (f bundle) fac() factors {
 //
 func (currentCircuit *function) compile(currentConstraint *Constraint, gateCollector *gateContainer) (returnBundle bundle, reachedReturn bool) {
 	if currentConstraint.Output.Type&Types != 0 {
-		return rets(Token{
-			Type:       currentConstraint.Output.Type,
-			Identifier: currentConstraint.Output.Identifier,
-		}.toFactors(), function{}), false
+		return rets(currentConstraint.Output.toFactors(), function{}), false
 	}
 
 	switch currentConstraint.Output.Type {
@@ -187,12 +184,17 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		negatedConditions := []*function{}
 		var result factors
 		for _, task := range ifElseCircuits.taskStack.data {
+			statement, ex := ifElseCircuits.findFunctionInBloodline(task.Output.Identifier)
+			if !ex {
+				panic(fmt.Sprintf("function %s not declared", currentConstraint.Output.Identifier))
+			}
+
 			//check if the condition is static. if that is the case, and it is true, we execute
 			//the statement and return. the remaining if-else conditions are ignored
 			//else condition
-			if task.Inputs == nil || len(task.Inputs) == 0 {
+			if task.Output.Type == ELSE {
 
-				bund, retu := ifElseCircuits.execute(gateCollector)
+				bund, retu := statement.execute(gateCollector)
 				if result == nil {
 					return bund, retu
 				}
@@ -206,39 +208,40 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 
 				return rets(addFactors(result, bund.fac()), function{}), retu
 			}
-			if isStat, isSat := currentCircuit.checkStaticCondition(currentConstraint.Inputs[0]); isSat && isStat {
+			if isStat, isSat := currentCircuit.checkStaticCondition(task.Inputs[0]); isSat && isStat {
 
-				bund, retu := ifElseCircuits.execute(gateCollector)
+				bund, retu := statement.execute(gateCollector)
 				if result == nil {
 					return bund, retu
 				}
-				panic("not done yet")
 
-				return rets(addFactors(bund.fac(), result), function{}), retu
+				var composed = bund.fac().primitiveReturnfunction()
+
+				for _, negatedCondition := range negatedConditions {
+					composed = combineFunctions("*", composed, negatedCondition)
+				}
+				bund, _ = composed.execute(gateCollector)
+
+				return rets(addFactors(result, bund.fac()), function{}), retu
 			} else if !isStat {
 
 				//the condition
-				bund, r := ifElseCircuits.compile(task.Inputs[0], gateCollector)
-				if r {
-					panic("cannot return")
+				conditionBund, r := currentCircuit.compile(task.Inputs[0], gateCollector)
+				if r || len(conditionBund) != 1 {
+					panic("an error during compilation of the if condition appeared")
 				}
 
-				if statement, ex := ifElseCircuits.functions[task.Output.Identifier]; ex {
-					//run whats inside the if { }
-					//if there is a return, we append the conditional to it.
-					//TODO how to handle overwrites?
-					rr, r := statement.execute(gateCollector)
-					if r {
-						composed := combineFunctions("*", bund.fac().primitiveReturnfunction(), rr.fac().primitiveReturnfunction())
-						for _, negatedCondition := range negatedConditions {
-							composed = combineFunctions("*", composed, negatedCondition)
-						}
-						f, _ := composed.execute(gateCollector)
-						result = addFactors(result, f.fac())
+				//run whats inside the if { }
+				//if there is a return, we append the conditional to it.
+				//TODO how to handle overwrites?
+				rr, r := statement.execute(gateCollector)
+				if r {
+					composed := combineFunctions("*", conditionBund.fac().primitiveReturnfunction(), rr.fac().primitiveReturnfunction())
+					for _, negatedCondition := range negatedConditions {
+						composed = combineFunctions("*", composed, negatedCondition)
 					}
-
-				} else {
-					panic(" wtf")
+					f, _ := composed.execute(gateCollector)
+					result = addFactors(result, f.fac())
 				}
 
 				//everything the statement returnes, must be multiplied with the condition
@@ -249,7 +252,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 					Type:       DecimalNumberToken,
 					Identifier: "1",
 				}
-				negateFkt := combineFunctions("-", one.primitiveReturnfunction(), bund.fac().primitiveReturnfunction())
+				negateFkt := combineFunctions("-", one.primitiveReturnfunction(), conditionBund.fac().primitiveReturnfunction())
 				negatedConditions = append(negatedConditions, negateFkt)
 
 			}
@@ -534,7 +537,10 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				leftFactors, _ = currentCircuit.compile(left, gateCollector)
 				rightFactors, _ = currentCircuit.compile(right, gateCollector)
 
-				if leftFactors.fac().isSingleNumber() || rightFactors.fac().isSingleNumber() {
+				if len(leftFactors) != 1 || len(rightFactors) != 1 {
+					panic("")
+				}
+				if !leftFactors[0].facs.containsArgument() || !rightFactors[0].facs.containsArgument() {
 					return rets(mulFactors(leftFactors.fac(), rightFactors.fac()), function{}), currentConstraint.Output.Type == RETURN
 				}
 				commonFactor, newLeft, newRight := extractConstant(leftFactors.fac(), rightFactors.fac())
@@ -548,7 +554,11 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				leftFactors, _ = currentCircuit.compile(left, gateCollector)
 				rightFactors, _ = currentCircuit.compile(right, gateCollector)
 
-				if rightFactors.fac().isSingleNumber() { // (x1+x2..)/6
+				if len(leftFactors) != 1 || len(rightFactors) != 1 {
+					panic("")
+				}
+
+				if !rightFactors[0].facs.containsArgument() { // (x1+x2..)/6
 					return rets(mulFactors(leftFactors.fac(), invertFactors(rightFactors.fac())), function{}), currentConstraint.Output.Type == RETURN
 				}
 
@@ -571,7 +581,11 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				//apply a fixed exponent exponentiation using a simple square and multiply method
 				leftFactors, _ = currentCircuit.compile(left, gateCollector)
 				rightFactors, _ = currentCircuit.compile(right, gateCollector)
-				if !rightFactors.fac().isSingleNumber() {
+				if len(leftFactors) != 1 || len(rightFactors) != 1 {
+					panic("")
+				}
+
+				if rightFactors[0].facs.containsArgument() { // (x1+x2..)/6
 					panic("exponent must be a compile time constant")
 				}
 				if rightFactors.fac()[0].multiplicative.Sign() == -1 {
@@ -610,12 +624,20 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			case "+":
 				leftFactors, _ = currentCircuit.compile(left, gateCollector)
 				rightFactors, _ = currentCircuit.compile(right, gateCollector)
+				if len(leftFactors) != 1 || len(rightFactors) != 1 {
+					panic("")
+				}
+
 				addedFactors := addFactors(leftFactors.fac(), rightFactors.fac())
 				return rets(addedFactors, function{}), currentConstraint.Output.Type == RETURN
 
 			case "-":
 				leftFactors, _ = currentCircuit.compile(left, gateCollector)
 				rightFactors, _ = currentCircuit.compile(right, gateCollector)
+				if len(leftFactors) != 1 || len(rightFactors) != 1 {
+					panic("")
+				}
+
 				rf := negateFactors(rightFactors.fac())
 				addedFactors := addFactors(leftFactors.fac(), rf)
 				return rets(addedFactors, function{}), currentConstraint.Output.Type == RETURN
@@ -930,7 +952,11 @@ func (p *Program) GatesToR1CS(mGates []*Gate) (r1CS *R1CS) {
 	}
 
 	insertValue := func(val factor, arr []*big.Int) {
-		if val.Typ.Type == DecimalNumberToken {
+		//if val.Typ.Type == DecimalNumberToken {
+		//	arr[0] = val.multiplicative
+		//	return
+		//}
+		if val.Typ.Identifier == "" {
 			arr[0] = val.multiplicative
 			return
 		}

@@ -92,9 +92,12 @@ func divisionGate(a, b factors) (g *Gate) {
 
 // (1-id)* id = 0
 func zeroOrOneGate(id string) (g *Gate) {
-	one := Token{
-		Type: DecimalNumberToken,
-	}.toFactor()
+	one := factor{
+		Typ: Token{
+			Type: BOOL,
+		},
+		multiplicative: bigOne,
+	}
 
 	g = &Gate{
 		leftIns: factors{one,

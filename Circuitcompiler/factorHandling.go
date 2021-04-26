@@ -396,19 +396,27 @@ func combineFunctions(operation string, a, b *function) *function {
 		Inputs: []*Constraint{
 			{
 				Output: Token{
-					Type:       ArithmeticOperatorToken,
+					Type:       UNASIGNEDVAR,
 					Identifier: operation,
 				},
-			}, {
-				Output: Token{
-					Type:       FUNCTION_CALL,
-					Identifier: a.Name,
-				},
-			}, {
-				Output: Token{
-					Type:       FUNCTION_CALL,
-					Identifier: b.Name,
-				},
-			}}})
+				Inputs: []*Constraint{
+					{
+						Output: Token{
+							Type:       ArithmeticOperatorToken,
+							Identifier: operation,
+						},
+					}, {
+						Output: Token{
+							Type:       FUNCTION_CALL,
+							Identifier: a.Name,
+						},
+					}, {
+						Output: Token{
+							Type:       FUNCTION_CALL,
+							Identifier: b.Name,
+						},
+					}},
+			},
+		}})
 	return rmp
 }

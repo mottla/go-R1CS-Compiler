@@ -2,10 +2,12 @@ package Circuitcompiler
 
 import (
 	"fmt"
+	"github.com/stretchr/testify/assert"
+	"math/big"
 	"testing"
 )
 
-func TestNIfProgram(t *testing.T) {
+func TestStaticIfProgram(t *testing.T) {
 	code := `
 	func main(x bool,y field)(field) {
 		if 2>3 {
@@ -33,6 +35,46 @@ func TestNIfProgram(t *testing.T) {
 	fmt.Println(r1cs.L)
 	fmt.Println(r1cs.R)
 	fmt.Println(r1cs.O)
+}
+
+func TestDynamicIfProgram(t *testing.T) {
+	code := `
+	func d(x bool,y field)bool{
+		if x==y {
+			return x*x
+		}else if 2==2{
+			return y*y
+		}else {
+			return x
+		}
+		return 1
+	}
+	func main(x bool,y field)(field) {
+		equal(d(x,y),7)
+		return 1
+	}
+
+`
+	program := NewParse(code)
+	container := program.Execute()
+
+	gates := container.OrderedGates()
+	fmt.Println("\n generating R1CS")
+	r1cs := program.GatesToR1CS(gates)
+	fmt.Printf("number of gates %v, witness length %v \n ", r1cs.NumberOfGates, r1cs.WitnessLength)
+	//
+	//fmt.Println(r1cs.L)
+	//fmt.Println(r1cs.R)
+	//fmt.Println(r1cs.O)
+	inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, []*big.Int{big.NewInt(int64(27)), big.NewInt(int64(3))})
+
+	fmt.Println("input")
+	fmt.Println(inputs)
+
+	w, err := CalculateTrace(r1cs, inputs)
+	assert.NoError(t, err)
+	fmt.Printf("witness len %v \n ", len(w))
+	fmt.Println(w)
 }
 
 //func TestCorrectness(t *testing.T) {
