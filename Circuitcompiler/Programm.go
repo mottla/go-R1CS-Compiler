@@ -53,11 +53,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			Identifier: currentConstraint.Output.Identifier,
 		}.toFactors(), function{}), false
 	case DecimalNumberToken:
-		value, success := utils.Field.ArithmeticField.StringToFieldElement(currentConstraint.Output.Identifier)
-		if !success {
-			panic("not a constant")
-		}
-		f := factor{Typ: Token{Type: DecimalNumberToken, Identifier: currentConstraint.Output.Identifier}, multiplicative: value}
+		f := factor{Typ: Token{Type: DecimalNumberToken, Identifier: currentConstraint.Output.Identifier}, multiplicative: currentConstraint.Output.value}
 		return rets(factors{f}, function{}), false
 	case IDENTIFIER_VARIABLE:
 		// an identifier is always a lone indentifier. If such one is reached. we are at a leaf and either can resolve him as argument or declared function/variable
@@ -122,21 +118,22 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			panic("assignment missmatch")
 		}
 
+		//range over the
 		for i, v := range currentConstraint.Inputs[0].Inputs {
 			var toOverloadIdentifier = v.Output.Identifier
 
-			//if v.Output.Type == ARRAY_CALL {
-			//	var id string
-			//	if f, ex := currentCircuit.findFunctionInBloodline(toOverloadIdentifier); !ex {
-			//		id = currentConstraint.Inputs[0].Output.Identifier
-			//	} else {
-			//		id = f.Name
-			//	}
-			//	// myArray[7*3] = expression
-			//	toOverloadIdentifier = currentCircuit.resolveArrayName(id, currentConstraint.Inputs[0].Inputs)
-			//	//myArray[21] = expression
-			//
-			//}
+			if v.Output.Type == ARRAY_CALL {
+				//var id string
+				//if f, ex := currentCircuit.findFunctionInBloodline(toOverloadIdentifier); !ex {
+				//	id = currentConstraint.Inputs[i].Output.Identifier
+				//} else {
+				//	id = f.Name
+				//}
+				// myArray[7*3] = expression
+				toOverloadIdentifier = currentCircuit.resolveArrayName(toOverloadIdentifier, v.Inputs)
+				//myArray[21] = expression
+
+			}
 
 			context, ex := currentCircuit.getCircuitContainingFunctionInBloodline(toOverloadIdentifier)
 			if !ex {
@@ -157,23 +154,19 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		}
 		return emptyRets()
 	case ARRAY_CALL:
-		//var id string
-		//if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); !ex {
-		//	id = currentConstraint.Output.Identifier
-		//} else {
-		//	id = f.Name
-		//}
-		//resolvedName := currentCircuit.resolveArrayName(id, currentConstraint.Inputs)
-		//if f, ex := currentCircuit.findFunctionInBloodline(resolvedName); ex {
-		//	return f.execute(gateCollector)
-		//}
-		//
-		//if con, ex := currentCircuit.findConstraintInBloodline(resolvedName); ex {
-		//	a, _, fkt := currentCircuit.compile(con, gateCollector)
-		//	return a, false, fkt
-		//} else {
-		//	panic(fmt.Sprintf("array %s not declared", resolvedName))
-		//}
+		var id string
+		if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); !ex {
+			id = currentConstraint.Output.Identifier
+		} else {
+			id = f.Name
+		}
+		resolvedName := currentCircuit.resolveArrayName(id, currentConstraint.Inputs)
+		if f, ex := currentCircuit.findFunctionInBloodline(resolvedName); ex {
+			return f.execute(gateCollector)
+		}
+
+		panic(fmt.Sprintf("array %s not declared", resolvedName))
+
 	case IF_FUNCTION_CALL:
 
 		ifElseCircuits, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier)

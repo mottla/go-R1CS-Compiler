@@ -3,7 +3,6 @@ package Circuitcompiler
 import (
 	"fmt"
 	"math/big"
-	"strconv"
 	"strings"
 )
 
@@ -305,16 +304,13 @@ func (currentCircuit *function) resolveArrayName(id string, inputs []*Constraint
 	//}
 	for _, in := range inputs {
 		indexFactors, _ := currentCircuit.compile(in, newGateContainer())
-		if !indexFactors.fac().isSingleNumber() {
+		if indexFactors.fac().containsArgument() {
 			panic("cannot access array dynamically in an arithmetic circuit currently")
 		}
 		if len(indexFactors) > 1 {
 			panic("unexpected")
 		}
-		tmp, err := strconv.ParseInt(indexFactors.fac()[0].Typ.Identifier, 10, 64)
-		if err != nil || tmp < 0 {
-			panic(err.Error())
-		}
+		tmp := indexFactors.fac()[0].multiplicative
 		arrayIdentifier += fmt.Sprintf("[%v]", tmp)
 	}
 	return arrayIdentifier

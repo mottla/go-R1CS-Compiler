@@ -420,3 +420,33 @@ func combineFunctions(operation string, a, b *function) *function {
 		}})
 	return rmp
 }
+func checkRangeValidity(in *big.Int, tokenType TokenType) bool {
+	switch tokenType {
+	case BOOL:
+		if v := in.Uint64(); v > 1 {
+			panic(fmt.Sprintf("boolean expected, got %v", v))
+		}
+	case U8:
+		if v := in.Uint64(); v > 1<<8 {
+			panic(fmt.Sprintf("Uint8 expected, got %v", v))
+		}
+
+	case U16:
+		if v := in.Uint64(); v > 1<<16 {
+			panic(fmt.Sprintf("Uint16 expected, got %v", v))
+		}
+
+	case U32:
+		if v := in.Uint64(); v > 1<<32 {
+			panic(fmt.Sprintf("uint32 expected, got %v", v))
+		}
+
+	case U64: //cannot be reached. since uint64 conversion would fail anyway
+		if v := in.Uint64(); v > ^uint64(1) {
+			panic(fmt.Sprintf("uint64 expected, got %v", v))
+		}
+	case FIELD:
+
+	}
+	return true
+}

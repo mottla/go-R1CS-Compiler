@@ -3,6 +3,7 @@ package Circuitcompiler
 import (
 	"errors"
 	"fmt"
+	"github.com/mottla/go-R1CS-Compiler/utils"
 	"math/big"
 	"strings"
 	"unicode/utf8"
@@ -23,6 +24,7 @@ type Tokens struct {
 type Token struct {
 	Type       TokenType
 	Identifier string
+	value      *big.Int
 	isArray    bool
 	isArgument bool
 	dimensions []int64
@@ -125,6 +127,7 @@ var Types = BOOL | U8 | U16 | U32 | U64 | FIELD
 
 const (
 	DecimalNumberToken TokenType = 1 << iota
+	HexNumberToken
 	SyntaxToken
 	CommentToken
 	AssignmentOperatorToken
@@ -280,11 +283,35 @@ func (l *Lexer) Current() string {
 // Emit will receive a token type and push a new token with the current analyzed
 // value into the tokens channel.
 func (l *Lexer) Emit(t TokenType) {
-	tok := Token{
-		Type:       t,
-		Identifier: l.Current(),
-		readInLine: l.currentLine,
+	var tok Token
+	if t == DecimalNumberToken {
+		value, success := utils.Field.ArithmeticField.StringToFieldElement(l.Current())
+		if !success {
+			panic("not possible")
+		}
+		tok = Token{
+			Type:       DecimalNumberToken,
+			readInLine: l.currentLine,
+			value:      value,
+		}
+	} else if t == HexNumberToken {
+		value, success := new(big.Int).SetString(l.Current()[2:], 16)
+		if !success {
+			panic("not possible")
+		}
+		tok = Token{
+			Type:       DecimalNumberToken,
+			readInLine: l.currentLine,
+			value:      value,
+		}
+	} else {
+		tok = Token{
+			Type:       t,
+			Identifier: l.Current(),
+			readInLine: l.currentLine,
+		}
 	}
+
 	l.tokens <- tok
 	if tok.Identifier == "\n" {
 		l.currentLine = l.currentLine + 1
@@ -425,19 +452,7 @@ func DecimalNumberState(l *Lexer) StateFunc {
 }
 func HexNumberState(l *Lexer) StateFunc {
 	l.Take(hexTokens)
-	c := l.Current()
-	v, b := new(big.Int).SetString(c[2:], 16)
-	if !b {
-		panic("not possible")
-	}
-	tok := Token{
-		Type:       DecimalNumberToken,
-		Identifier: v.String(),
-	}
-	l.tokens <- tok
-	l.start = l.position
-	l.rewind.clear()
-
+	l.Emit(HexNumberToken)
 	return ProbablyWhitespaceState(l)
 }
 

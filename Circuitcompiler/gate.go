@@ -94,7 +94,7 @@ func divisionGate(a, b factors) (g *Gate) {
 func zeroOrOneGate(id string) (g *Gate) {
 	one := factor{
 		Typ: Token{
-			Type: BOOL,
+			Type: ARGUMENT,
 		},
 		multiplicative: bigOne,
 	}

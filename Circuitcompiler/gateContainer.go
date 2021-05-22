@@ -20,6 +20,7 @@ func (g *gateContainer) OrderedGates() []*Gate {
 func (g *gateContainer) completeFunction(f factors) {
 
 	//if len f is 1, we can simpl
+	//todo single number call is outdated
 	if f == nil || len(f) == 0 || f.isSingleNumber() {
 		return
 	}

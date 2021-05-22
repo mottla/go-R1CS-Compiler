@@ -90,10 +90,11 @@ func (p *Parser) parseExpression(stack []Token, constraint *Constraint) {
 
 	//can only be IN | Number
 	if len(stack) == 1 {
-		if stack[0].Type&(DecimalNumberToken|IDENTIFIER_VARIABLE) != 0 {
+		if stack[0].Type == DecimalNumberToken || stack[0].Type == IDENTIFIER_VARIABLE {
 			constraint.Inputs = append(constraint.Inputs, &Constraint{Output: stack[0]})
 			return
 		}
+
 		p.error("Variable or number expected, got %v ", stack[0])
 	}
 
@@ -488,7 +489,6 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 		for ; ; c, s, r, contin = fk(r) {
 			statements = append(statements, s)
 			conditions = append(conditions, c)
-
 			if !contin {
 				break
 			}
@@ -529,10 +529,6 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 
 			p.NEWPreCompile(tsk, v)
 		}
-
-		return
-	case ELSE:
-		p.error("else needs a proceeding if statement")
 
 		return
 	case FOR:
@@ -605,7 +601,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 
 		//p.statementMode(r)
 		break
-	case IDENTIFIER_VARIABLE: //variable overloading -> a = a * 4
+	case IDENTIFIER_VARIABLE: //variable overloading -> a,b = a * 4 , 7
 		l, r := splitTokensAtFirstString(tokens, "\n")
 
 		if r != nil && r[0].Identifier != "\n" {
@@ -638,7 +634,6 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 			if _, ex := currentCircuit.findFunctionInBloodline(arguments[0].Identifier); !ex {
 				p.error(fmt.Sprintf("variable %s not declared", arguments[0].Identifier))
 			}
-
 			if remm == nil {
 				break
 			}
@@ -647,48 +642,15 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 		//before we parse the rhs, finish of the rest
 		p.NEWPreCompile(currentCircuit, r)
 
-		//the second input is the  'new to assign' expression
-		p.parseExpression(expr[1:], overloadWith)
-
-		return
-	case BOOL:
-		//TODO i should stop treating arrays as something speacial, they are just
-		//syntactic suggar for a function
-		// say bool[2] a = [k,z] ====  func a(x){ if x =0 return k, else if x =1 reutrn z, else return nil }
-		//bool a = 0/1
-		//bool[4][4] a = [[],[],[],[]]
-		assignmentLine, afterBreak := splitTokensAtFirstString(tokens, "\n")
-
-		lhs, rhs := splitTokensAtFirstString(assignmentLine, "=")
-
-		id := lhs[len(lhs)-1]
-		p.AssertIdentifier(id)
-		if len(rhs[1:]) == 0 {
-			p.error("assignment missing")
-		}
-		if _, ex := currentCircuit.functions[(id.Identifier)]; ex {
-			panic(fmt.Sprintf("variable %s already declared", id.Identifier))
+		for arguments, remm := splitAtFirstHighestStringType(expr[1:], ","); ; arguments, remm = splitAtFirstHighestStringType(remm, ",") {
+			arguments = removeLeadingAndTrailingBreaks(arguments)
+			//the first input is the thing to overwrite
+			p.parseExpression(arguments, overloadWith)
+			if remm == nil {
+				break
+			}
 		}
 
-		tok := Token{
-			Type:       BOOL,
-			Identifier: id.Identifier,
-		}
-
-		//read and set the declared array size on the lhs
-		if len(lhs) > 2 {
-			tok.isArray = true
-			tok.dimensions = p.loadDimension(lhs[1:len(lhs)-1], []int64{})
-		}
-		p.NEWPreCompile(currentCircuit, afterBreak)
-
-		varConst := &Constraint{
-			Output: tok,
-		}
-
-		p.parseExpression(rhs[1:], varConst)
-		p.loadArray(currentCircuit, id.Identifier, varConst.Inputs[0], varConst.Output.dimensions, []int{})
-		currentCircuit.functions[(id.Identifier)] = tok.primitiveReturnfunction()
 		return
 	case RETURN:
 		//return (1+a)
@@ -719,8 +681,50 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 
 		p.NEWPreCompile(currentCircuit, r)
 		return
-
 	default:
+		if typ := tokens[0].Type; typ&Types != 0 {
+			//TODO i should stop treating arrays as something speacial, they are just
+			//syntactic suggar for a function
+			// say bool[2] a = [k,z] ====  func a(x){ if x =0 return k, else if x =1 reutrn z, else return nil }
+			//bool a = 0/1
+			//var a = func()(bool) {return 0/1}
+			//bool[4][4] a = [[],[],[],[]]
+			//var a = func(x field,y field)(bool) {return 0/1}
+			assignmentLine, afterBreak := splitTokensAtFirstString(tokens, "\n")
+
+			lhs, rhs := splitTokensAtFirstString(assignmentLine, "=")
+
+			id := lhs[len(lhs)-1]
+			p.AssertIdentifier(id)
+			if len(rhs[1:]) == 0 {
+				p.error("assignment missing")
+			}
+			if _, ex := currentCircuit.functions[(id.Identifier)]; ex {
+				panic(fmt.Sprintf("variable %s already declared", id.Identifier))
+			}
+
+			tok := Token{
+				Type:       typ,
+				Identifier: id.Identifier,
+			}
+
+			//read and set the declared array size on the lhs
+			if len(lhs) > 2 {
+				tok.isArray = true
+				tok.dimensions = p.loadDimension(lhs[1:len(lhs)-1], []int64{})
+			}
+			currentCircuit.functions[(id.Identifier)] = tok.primitiveReturnfunction()
+
+			p.NEWPreCompile(currentCircuit, afterBreak)
+
+			varConst := &Constraint{
+				Output: tok,
+			}
+
+			p.parseExpression(rhs[1:], varConst)
+			p.loadArray(currentCircuit, id.Identifier, varConst.Inputs[0], varConst.Output.dimensions, []int{}, typ)
+			return
+		}
 		p.error("%v", tokens)
 	}
 	return
@@ -736,11 +740,8 @@ func (p *Parser) loadDimension(toks []Token, in []int64) (res []int64) {
 	if toks[0].Identifier != "[" || toks[2].Identifier != "]" || toks[1].Type != DecimalNumberToken {
 		p.error("invalid array\"")
 	}
-	nr, err := strconv.ParseInt(toks[1].Identifier, 10, 64)
-	if err != nil {
-		p.error(err.Error())
-	}
-	return p.loadDimension(toks[3:], append(in, nr))
+
+	return p.loadDimension(toks[3:], append(in, toks[1].value.Int64()))
 }
 
 func (p *Parser) resolveArrayName(currentCircuit *function, con *Constraint) (composedName string, arrayDimension []int64, isArray bool) {
@@ -767,7 +768,38 @@ func (p *Parser) resolveArrayName(currentCircuit *function, con *Constraint) (co
 	}
 	return
 }
-func (p *Parser) loadArray(current *function, name string, constaint *Constraint, dim []int64, pos []int) {
+func (p *Parser) loadArray(current *function, name string, constaint *Constraint, dim []int64, pos []int, expecedType TokenType) {
+
+	var typchk = func(c *Constraint) {
+		if c.Output.Type == DecimalNumberToken {
+			checkRangeValidity(c.Output.value, expecedType)
+		} else if c.Output.Type == FUNCTION_CALL {
+			if f, ex := current.findFunctionInBloodline(c.Output.Identifier); ex {
+
+				if len(f.Outputs) != 1 || f.Outputs[0].typ.Type != expecedType {
+					panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, f.Outputs[0].typ.Type))
+				}
+			} else {
+				panic(fmt.Sprintf("variable %s not declared", c.Output.Identifier))
+			}
+		} else if c.Output.Type == IDENTIFIER_VARIABLE {
+			if f, ex := current.findFunctionInBloodline(c.Output.Identifier); ex {
+
+				if len(f.Inputs) != 0 || len(f.Outputs) != 1 || f.Outputs[0].typ.Type != expecedType {
+					panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, f.Outputs[0].typ.Type))
+				}
+			} else {
+				panic(fmt.Sprintf("variable %s not declared", c.Output.Identifier))
+			}
+		} else {
+			panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, c.Output.Type))
+		}
+	}
+
+	if dim == nil && constaint.Inputs == nil {
+		typchk(constaint)
+		return
+	}
 	if len(constaint.Inputs) != int(dim[0]) {
 		p.error("array assignment size missmatch")
 	}
@@ -778,12 +810,19 @@ func (p *Parser) loadArray(current *function, name string, constaint *Constraint
 		}
 		for i := 0; i < int(dim[0]); i++ {
 			id := st + fmt.Sprintf("[%v]", i)
-			current.functions[id] = constaint.Inputs[i].primitiveReturnfunction()
+			// should we check if the assigned types match not, or at compile time?
+			typchk(constaint.Inputs[i])
+			if f, ex := current.findFunctionInBloodline(constaint.Inputs[i].Output.Identifier); ex {
+				current.functions[id] = f
+			} else {
+				current.functions[id] = constaint.Inputs[i].primitiveReturnfunction()
+			}
+
 		}
 		return
 	}
 	for i, v := range constaint.Inputs {
-		p.loadArray(current, name, v, dim[1:], append(pos, i))
+		p.loadArray(current, name, v, dim[1:], append(pos, i), expecedType)
 	}
 
 }
@@ -855,25 +894,6 @@ func (p *Parser) stackAllTokens() []Token {
 		Type: EOF,
 	})
 	return stack
-}
-
-func (p *Parser) stackTillBreak() []Token {
-	var stack []Token
-	for tok := p.nextToken(); tok.Identifier != "\n" || tok.Type == EOF; tok = p.nextToken() {
-		stack = append(stack, *tok)
-	}
-	return stack
-}
-func (p *Parser) stackTillSemiCol() []Token {
-	var stack []Token
-	for tok := p.nextToken(); tok.Identifier != "\n" || tok.Type != EOF; tok = p.nextToken() {
-		if tok.Identifier == ";" {
-			return stack
-		}
-		stack = append(stack, *tok)
-	}
-	p.error("no ';' found")
-	return nil
 }
 
 //splitAt takes takes a string S and a token array and splits st: abScdasdSf -> ( ab,cdas, F  )

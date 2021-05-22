@@ -37,20 +37,17 @@ func TestStaticIfProgram(t *testing.T) {
 	fmt.Println(r1cs.O)
 }
 
-func TestDynamicIfProgram(t *testing.T) {
+func TestForProgram(t *testing.T) {
 	code := `
-	func d(x bool,y field)bool{
-		if x==y {
-			return x*x
-		}else if 2==2{
-			return y*y
-		}else {
-			return x
-		}
-		return 1
+	func aa()(bool,bool){
+		bool a = 1
+		return a,a
 	}
-	func main(x bool,y field)(field) {
-		equal(d(x,y),7)
+	func main(x field,y field)(field) {	
+		
+		bool[2] b = [a,1]
+		bool a = 1
+		a,b[1],a= aa(),1
 		return 1
 	}
 
@@ -112,8 +109,8 @@ func TestDynamicIfProgram(t *testing.T) {
 //		}
 //	}
 //}
-//
-////seems to have trouble when the field size is to small
+
+//seems to have trouble when the field size is to small
 //func TestFixedBaseExponentiation(t *testing.T) {
 //
 //	var codeGen = func(exponent string) string {
