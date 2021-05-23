@@ -39,16 +39,11 @@ func TestStaticIfProgram(t *testing.T) {
 
 func TestForProgram(t *testing.T) {
 	code := `
-	func aa()(bool,bool){
-		bool a = 1
-		return a,a
+	func a()(func(c bool)(bool)) {	
+		return func(a bool)(bool){return 1}
 	}
-	func main(x field,y field)(field) {	
-		
-		bool[2] b = [a,1]
-		bool a = 1
-		a,b[1],a= aa(),1
-		return 1
+	func main(x field,y func(x bool)(bool))(func(c bool)(bool)) {			
+		return a()
 	}
 
 `

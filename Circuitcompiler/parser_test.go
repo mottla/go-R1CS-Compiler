@@ -22,7 +22,7 @@ func test(a field, b func(a field))(field,field) {
 	functionInput, rest := splitAtFirstHighestStringType(toks[3:], "{")
 	fmt.Println(rest)
 	fk := NewCircuit("", nil)
-	parser.PrepareFunction(fk, functionInput)
+	parser.PrepareFunctionSignature(fk, functionInput)
 	fmt.Println(fk)
 }
 
@@ -32,7 +32,7 @@ func TestArray(t *testing.T) {
 	toks := parser.stackAllTokens()
 	toks = toks[:len(toks)-1]
 	ct := Constraint{}
-	parser.parseExpression(toks, &ct)
+	parser.parseExpression(&function{}, toks, &ct)
 	fmt.Println(ct)
 }
 func TestNewParse(t *testing.T) {

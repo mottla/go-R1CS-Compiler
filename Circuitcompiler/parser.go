@@ -77,9 +77,9 @@ func NewParse(code string) (p *Program) {
 // write some pattern matcher
 // var identifier = identifier|array
 
-// epx := (exp) | exp Operator exp | identifier(arg) | identifier | Number | identifier[exp]
+// epx := (exp) | exp Operator exp | identifier(arg) | identifier | Number | identifier[exp] | func(arg)(out){stm} | func(arg)(out){stm}(callwith)
 //arg := exp | arg,exp
-func (p *Parser) parseExpression(stack []Token, constraint *Constraint) {
+func (p *Parser) parseExpression(currentCircuit *function, stack []Token, constraint *Constraint) {
 	//(exp)->exp
 	stack = stripOfBrackets(stack)
 
@@ -117,8 +117,8 @@ func (p *Parser) parseExpression(stack []Token, constraint *Constraint) {
 		})
 
 		if len(l) == 1 && len(r) == 1 {
-			p.parseExpression(l, constraint)
-			p.parseExpression(r, constraint)
+			p.parseExpression(currentCircuit, l, constraint)
+			p.parseExpression(currentCircuit, r, constraint)
 			return
 		}
 		if len(l) == 1 {
@@ -128,9 +128,9 @@ func (p *Parser) parseExpression(stack []Token, constraint *Constraint) {
 				Identifier: combineString(r),
 			}
 			c2 := &Constraint{Output: tok}
-			p.parseExpression(l, constraint)
+			p.parseExpression(currentCircuit, l, constraint)
 			constraint.Inputs = append(constraint.Inputs, c2)
-			p.parseExpression(r, c2)
+			p.parseExpression(currentCircuit, r, c2)
 			return
 		}
 		if len(r) == 1 {
@@ -141,13 +141,13 @@ func (p *Parser) parseExpression(stack []Token, constraint *Constraint) {
 			}
 			c2 := &Constraint{Output: tok}
 			constraint.Inputs = append(constraint.Inputs, c2)
-			p.parseExpression(l, c2)
-			p.parseExpression(r, constraint)
+			p.parseExpression(currentCircuit, l, c2)
+			p.parseExpression(currentCircuit, r, constraint)
 			return
 		}
 
-		p.parseExpression(l, constraint)
-		p.parseExpression(r, constraint)
+		p.parseExpression(currentCircuit, l, constraint)
+		p.parseExpression(currentCircuit, r, constraint)
 
 		return
 	} else if binOperation.Type != 0 {
@@ -158,10 +158,64 @@ func (p *Parser) parseExpression(stack []Token, constraint *Constraint) {
 
 		cr := &Constraint{Output: stack[0]}
 		constraint.Inputs = append(constraint.Inputs, cr)
-		restAfterBracketsClosed := p.argumentParse(stack[1:], splitAtClosingBrackets, cr)
+		restAfterBracketsClosed := p.argumentParse(currentCircuit, stack[1:], splitAtClosingBrackets, cr)
 		//TODO  fkt(34)*7
 		if len(restAfterBracketsClosed) != 0 {
 			p.error("%v", restAfterBracketsClosed)
+		}
+		return
+	}
+
+	if stack[0].Type == FUNCTION_DEFINE {
+		fkt := NewCircuit(fmt.Sprintf("unnamed%v", len(currentCircuit.functions)), currentCircuit)
+		currentCircuit.functions[fkt.Name] = fkt
+		p.Assert("(", stack[1])
+
+		inside, statement := splitAtFirstHighestStringType(stack[1:], "{")
+
+		p.PrepareFunctionSignature(fkt, inside)
+
+		statement, restt, s := splitAtClosingSwingBrackets(statement)
+		if !s {
+			panic("closing brackets missing")
+		}
+
+		if len(restt) != 0 && restt[0].Identifier == "(" {
+			ctr := &Constraint{
+				Output: Token{
+					Type:       FUNCTION_CALL,
+					Identifier: fkt.Name,
+				},
+			}
+			//currentCircuit or new circuit? should make no difference, or?
+			p.argumentParse(currentCircuit, restt, splitAtClosingBrackets, ctr)
+			constraint.Inputs = append(constraint.Inputs, ctr)
+		} else {
+			if len(restt) != 0 {
+				panic("")
+			}
+			ctr := &Constraint{
+				Output: Token{
+					Type:       IDENTIFIER_VARIABLE,
+					Identifier: fkt.Name,
+				},
+			}
+
+			constraint.Inputs = append(constraint.Inputs, ctr)
+		}
+		//now compile the function
+		p.NEWPreCompile(fkt, statement)
+
+		//check if the returns match the header description
+
+		ex, v := fkt.taskStack.PeekLast()
+		fktReturns := ex && v.Output.Type == RETURN
+
+		if fktReturns && len(v.Inputs) != len(fkt.Outputs) {
+			p.error("expect %v return values, got %v", len(fkt.Outputs), len(v.Inputs))
+		}
+		if !fktReturns && len(fkt.Outputs) != 0 {
+			p.error("expect %v return values, got %v", len(fkt.Outputs), len(v.Inputs))
 		}
 		return
 	}
@@ -174,10 +228,10 @@ func (p *Parser) parseExpression(stack []Token, constraint *Constraint) {
 		constraint.Inputs = append(constraint.Inputs, cr)
 
 		l, r, _ := splitAtClosingSquareBrackets(stack[2:])
-		p.parseExpression(l, cr)
+		p.parseExpression(currentCircuit, l, cr)
 		for len(r) != 0 {
 			l, r, _ = splitAtClosingSquareBrackets(r)
-			p.parseExpression(l, cr)
+			p.parseExpression(currentCircuit, l, cr)
 		}
 		return
 	}
@@ -188,7 +242,7 @@ func (p *Parser) parseExpression(stack []Token, constraint *Constraint) {
 		},
 		}
 		constraint.Inputs = append(constraint.Inputs, cr)
-		restAfterBracketsClosed := p.argumentParse(stack, splitAtClosingSquareBrackets, cr)
+		restAfterBracketsClosed := p.argumentParse(currentCircuit, stack, splitAtClosingSquareBrackets, cr)
 		// [1,b,c]
 		if len(restAfterBracketsClosed) != 0 {
 			p.error("array fdsaf")
@@ -203,7 +257,7 @@ func (p *Parser) parseExpression(stack []Token, constraint *Constraint) {
 }
 
 //argument parse expects  bracket-arg-bracket
-func (p *Parser) argumentParse(stack []Token, bracketSplitFunction func(in []Token) (cutLeft, cutRight []Token, success bool), constraint *Constraint) (rest []Token) {
+func (p *Parser) argumentParse(currentCircuit *function, stack []Token, bracketSplitFunction func(in []Token) (cutLeft, cutRight []Token, success bool), constraint *Constraint) (rest []Token) {
 
 	functionInput, rem, success := bracketSplitFunction(stack)
 
@@ -216,7 +270,7 @@ func (p *Parser) argumentParse(stack []Token, bracketSplitFunction func(in []Tok
 	//arguments can be expressions, so we need to parse them
 	for arguments, remm := splitAtFirstHighestStringType(functionInput, ","); ; arguments, remm = splitAtFirstHighestStringType(remm, ",") {
 		arguments = removeLeadingAndTrailingBreaks(arguments)
-		p.parseExpression(arguments, constraint)
+		p.parseExpression(currentCircuit, arguments, constraint)
 		if remm == nil {
 			break
 		}
@@ -228,7 +282,7 @@ func (p *Parser) argumentParse(stack []Token, bracketSplitFunction func(in []Tok
 
 }
 
-func (p *Parser) PrepareFunction(newFunction *function, stack []Token) {
+func (p *Parser) PrepareFunctionSignature(newFunction *function, stack []Token) {
 
 	inputs, outputs, success := splitAtClosingBrackets(stack)
 	if !success {
@@ -305,7 +359,7 @@ func (p *Parser) prepareFunctionHeader(current *function, stack []Token) {
 	if stack[1].Type == FUNCTION_DEFINE {
 		//TODO rethink what context a function in a function header has
 		next := NewCircuit(stack[0].Identifier, nil)
-		p.PrepareFunction(next, stack[2:])
+		p.PrepareFunctionSignature(next, stack[2:])
 		current.functions[stack[0].Identifier] = next
 		current.Inputs = append(current.Inputs, returnTypes{
 			functionReturn: true,
@@ -346,9 +400,9 @@ func (p *Parser) prepareReturns(current *function, stack []Token) {
 		})
 		return
 	}
-	if stack[1].Type == FUNCTION_DEFINE {
+	if stack[0].Type == FUNCTION_DEFINE {
 		next := NewCircuit("", nil)
-		p.PrepareFunction(next, stack[2:])
+		p.PrepareFunctionSignature(next, stack[1:])
 		current.Outputs = append(current.Outputs, returnTypes{
 			functionReturn: true,
 			fkt:            next,
@@ -390,7 +444,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 		//NOTE THAT WE GOT ERROR WHEN USING &Constraint{} instead of Constraint{}, dont understand why
 		buffer := Constraint{}
 
-		rest := p.argumentParse(toks.toks, splitAtClosingSwingBrackets, &buffer)
+		rest := p.argumentParse(currentCircuit, toks.toks, splitAtClosingSwingBrackets, &buffer)
 		for _, publicInput := range buffer.Inputs {
 			a := currentCircuit.resolveArrayName(publicInput.Output.Identifier, publicInput.Inputs)
 			currentCircuit.SNARK_Public_Statement = append(currentCircuit.SNARK_Public_Statement, a)
@@ -411,21 +465,24 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 		p.NEWPreCompile(currentCircuit, append(t[:len(t)-1], tokens[2:]...))
 		//TODO then?
 	case FUNCTION_DEFINE:
+		//func maaain(){}
 		p.AssertIdentifiedType(FUNCTION_CALL, tokens[1])
+
+		if _, ex := currentCircuit.functions[tokens[1].Identifier]; ex {
+			p.error(fmt.Sprintf("function %s already declared", tokens[1].Identifier))
+		}
+		if _, ex := predeclaredFunctionsMap[tokens[1].Identifier]; ex {
+			panic(fmt.Sprintf("cannot redeclare predefined function %s ", tokens[1].Identifier))
+		}
 		fkt := NewCircuit(tokens[1].Identifier, currentCircuit)
-		if _, ex := currentCircuit.functions[fkt.Name]; ex {
-			p.error(fmt.Sprintf("function %s already declared", fkt.Name))
-		}
-		if _, ex := predeclaredFunctionsMap[fkt.Name]; ex {
-			panic(fmt.Sprintf("cannot redeclare predefined function %s ", fkt.Name))
-		}
 		//we add the function
 		currentCircuit.functions[fkt.Name] = fkt
+
 		p.Assert("(", tokens[2])
 
 		inside, rest := splitAtFirstHighestStringType(tokens[2:], "{")
 
-		p.PrepareFunction(fkt, inside)
+		p.PrepareFunctionSignature(fkt, inside)
 
 		inside, rest, success := splitAtClosingSwingBrackets(rest)
 		if !success {
@@ -505,14 +562,14 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 			}
 			if i == 0 {
 				p.AssertTypes(conditions[i], IF)
-				p.parseExpression(conditions[0][1:], ifConstraint)
+				p.parseExpression(currentCircuit, conditions[0][1:], ifConstraint)
 			} else if i < len(statements)-1 {
 				p.AssertTypes(conditions[i], ELSE, IF)
-				p.parseExpression(conditions[i][2:], ifConstraint)
+				p.parseExpression(currentCircuit, conditions[i][2:], ifConstraint)
 			} else {
 				if len(conditions[i]) > 1 {
 					p.AssertTypes(conditions[i], ELSE, IF)
-					p.parseExpression(conditions[i][2:], ifConstraint)
+					p.parseExpression(currentCircuit, conditions[i][2:], ifConstraint)
 				} else {
 					p.AssertTypes(conditions[i], ELSE)
 					ifConstraint.Output.Type = ELSE
@@ -564,7 +621,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 			p.error("';' expected, got %v", r[0])
 		}
 		r = r[1:]
-		p.parseExpression(l, ForConst)
+		p.parseExpression(currentCircuit, l, ForConst)
 		//a = a+1)
 		l, r, success = splitAtClosingBrackets(r)
 		if !success {
@@ -583,8 +640,8 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 				Type: VARIABLE_OVERLOAD,
 			},
 		}
-		p.parseExpression(overload, varConst)
-		p.parseExpression(expr[1:], varConst)
+		p.parseExpression(currentCircuit, overload, varConst)
+		p.parseExpression(currentCircuit, expr[1:], varConst)
 
 		ForConst.Inputs = append(ForConst.Inputs, varConst)
 
@@ -630,7 +687,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 			arguments = removeLeadingAndTrailingBreaks(arguments)
 
 			//the first input is the thing to overwrite
-			p.parseExpression(arguments, toOverload)
+			p.parseExpression(currentCircuit, arguments, toOverload)
 			if _, ex := currentCircuit.findFunctionInBloodline(arguments[0].Identifier); !ex {
 				p.error(fmt.Sprintf("variable %s not declared", arguments[0].Identifier))
 			}
@@ -645,7 +702,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 		for arguments, remm := splitAtFirstHighestStringType(expr[1:], ","); ; arguments, remm = splitAtFirstHighestStringType(remm, ",") {
 			arguments = removeLeadingAndTrailingBreaks(arguments)
 			//the first input is the thing to overwrite
-			p.parseExpression(arguments, overloadWith)
+			p.parseExpression(currentCircuit, arguments, overloadWith)
 			if remm == nil {
 				break
 			}
@@ -660,7 +717,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 				Type: RETURN,
 			},
 		}
-		p.argumentParse(l[1:], splitNothing, returnCOnstraint)
+		p.argumentParse(currentCircuit, l[1:], splitNothing, returnCOnstraint)
 		currentCircuit.taskStack.add(returnCOnstraint)
 		return
 	case FUNCTION_CALL:
@@ -674,9 +731,8 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 				panic(fmt.Sprintf("function %s not declared", tokens[0].Identifier))
 			}
 		}
-
 		//todo.. what if we call a function with a function call as argument, of a function that has not yet been declared
-		r := p.argumentParse(tokens[1:], splitAtClosingBrackets, varConst)
+		r := p.argumentParse(currentCircuit, tokens[1:], splitAtClosingBrackets, varConst)
 		currentCircuit.taskStack.add(varConst)
 
 		p.NEWPreCompile(currentCircuit, r)
@@ -721,7 +777,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 				Output: tok,
 			}
 
-			p.parseExpression(rhs[1:], varConst)
+			p.parseExpression(currentCircuit, rhs[1:], varConst)
 			p.loadArray(currentCircuit, id.Identifier, varConst.Inputs[0], varConst.Output.dimensions, []int{}, typ)
 			return
 		}
@@ -770,39 +826,49 @@ func (p *Parser) resolveArrayName(currentCircuit *function, con *Constraint) (co
 }
 func (p *Parser) loadArray(current *function, name string, constaint *Constraint, dim []int64, pos []int, expecedType TokenType) {
 
-	var typchk = func(c *Constraint) {
-		if c.Output.Type == DecimalNumberToken {
-			checkRangeValidity(c.Output.value, expecedType)
-		} else if c.Output.Type == FUNCTION_CALL {
+	var staticTypeCheck = func(c *Constraint) {
+		switch c.Output.Type {
+		case FUNCTION_CALL:
 			if f, ex := current.findFunctionInBloodline(c.Output.Identifier); ex {
-
 				if len(f.Outputs) != 1 || f.Outputs[0].typ.Type != expecedType {
 					panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, f.Outputs[0].typ.Type))
 				}
 			} else {
 				panic(fmt.Sprintf("variable %s not declared", c.Output.Identifier))
 			}
-		} else if c.Output.Type == IDENTIFIER_VARIABLE {
+		case IDENTIFIER_VARIABLE:
 			if f, ex := current.findFunctionInBloodline(c.Output.Identifier); ex {
-
 				if len(f.Inputs) != 0 || len(f.Outputs) != 1 || f.Outputs[0].typ.Type != expecedType {
 					panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, f.Outputs[0].typ.Type))
 				}
 			} else {
 				panic(fmt.Sprintf("variable %s not declared", c.Output.Identifier))
 			}
-		} else {
-			panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, c.Output.Type))
+		case DecimalNumberToken:
+			checkRangeValidity(c.Output.value, expecedType)
+		case ARRAY_CALL:
+			if f, ex := current.findFunctionInBloodline(c.Output.Identifier); ex {
+				if len(f.Outputs) != 1 || f.Outputs[0].typ.Type != expecedType {
+					panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, f.Outputs[0].typ.Type))
+				}
+			} else {
+				panic(fmt.Sprintf("variable %s not declared", c.Output.Identifier))
+			}
+		default:
+
 		}
 	}
 
+	//single variable assignment
+	// bool a = 1
 	if dim == nil && constaint.Inputs == nil {
-		typchk(constaint)
+		staticTypeCheck(constaint)
 		return
 	}
 	if len(constaint.Inputs) != int(dim[0]) {
 		p.error("array assignment size missmatch")
 	}
+	//array assignment
 	if len(dim) == 1 {
 		st := name
 		for _, v := range pos {
@@ -811,13 +877,8 @@ func (p *Parser) loadArray(current *function, name string, constaint *Constraint
 		for i := 0; i < int(dim[0]); i++ {
 			id := st + fmt.Sprintf("[%v]", i)
 			// should we check if the assigned types match not, or at compile time?
-			typchk(constaint.Inputs[i])
-			if f, ex := current.findFunctionInBloodline(constaint.Inputs[i].Output.Identifier); ex {
-				current.functions[id] = f
-			} else {
-				current.functions[id] = constaint.Inputs[i].primitiveReturnfunction()
-			}
-
+			staticTypeCheck(constaint.Inputs[i])
+			current.functions[id] = constaint.Inputs[i].primitiveReturnfunction(expecedType)
 		}
 		return
 	}

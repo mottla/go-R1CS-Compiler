@@ -19,6 +19,25 @@ type factor struct {
 	multiplicative *big.Int
 }
 
+//TODO
+func (f factors) Type() TokenType {
+	return f[0].Typ.Type
+}
+func (f factors) SetType(typ TokenType) {
+	if len(f) != 1 {
+		panic("")
+	}
+	if f.Type() == typ {
+		checkRangeValidity(f[0].multiplicative, typ)
+		return
+	}
+	if f.Type() != DecimalNumberToken {
+		panic("")
+	}
+	checkRangeValidity(f[0].multiplicative, typ)
+	f[0].Typ.Type = typ
+}
+
 func (f factors) Len() int {
 	return len(f)
 }
@@ -315,6 +334,13 @@ func (from factor) primitiveReturnfunction() (gives *function) {
 		return from.Typ.primitiveReturnfunction()
 	}
 	rmp := NewCircuit(from.Typ.Identifier, nil)
+	rmp.Outputs = []returnTypes{{
+		functionReturn: false,
+		fkt:            nil,
+		typ: Token{
+			Type: from.Typ.Type,
+		},
+	}}
 	rmp.taskStack.add(&Constraint{
 		Output: Token{
 			Type: RETURN,
