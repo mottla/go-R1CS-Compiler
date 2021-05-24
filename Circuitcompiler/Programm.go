@@ -49,9 +49,11 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	case ARGUMENT:
 
 		return rets(Token{
-			Type:       ARGUMENT,
-			Identifier: currentConstraint.Output.Identifier,
-		}.toFactors(), nil), false
+				Type:       ARGUMENT,
+				Identifier: currentConstraint.Output.Identifier,
+			}.toFactors(), nil),
+			false
+
 	case DecimalNumberToken:
 		f := factor{Typ: Token{Type: DecimalNumberToken, Identifier: currentConstraint.Output.Identifier}, multiplicative: currentConstraint.Output.value}
 		return rets(factors{f}, nil), false
@@ -94,6 +96,8 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		default:
 			panic(currentConstraint)
 		}
+	case VARIABLE_DECLARE:
+		fmt.Println("")
 	case RETURN:
 		var r = []returnTyped{}
 

@@ -328,7 +328,7 @@ func (currentCircuit *function) execute(gateCollector *gateContainer) (bundle, b
 	return emptyRets()
 }
 
-func (from *Constraint) primitiveReturnfunction(typ TokenType) (gives *function) {
+func (from *Constraint) primitiveReturnfunction(typ Token) (gives *function) {
 	rmp := NewCircuit(from.Output.Identifier, nil)
 	rmp.taskStack.add(&Constraint{
 		Output: Token{
@@ -339,9 +339,7 @@ func (from *Constraint) primitiveReturnfunction(typ TokenType) (gives *function)
 	rmp.Outputs = []returnTypes{{
 		functionReturn: false,
 		fkt:            nil,
-		typ: Token{
-			Type: typ,
-		},
+		typ:            typ,
 	}}
 	return rmp
 }

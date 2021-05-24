@@ -36,14 +36,25 @@ func TestStaticIfProgram(t *testing.T) {
 	fmt.Println(r1cs.R)
 	fmt.Println(r1cs.O)
 }
+func TestFunction_SPLIT(t *testing.T) {
 
+	switch a := FIELD; a {
+	case DecimalNumberToken:
+		fmt.Println("d")
+	case FIELD | U64:
+		fmt.Println("s")
+	}
+}
 func TestForProgram(t *testing.T) {
 	code := `
 	func a()(func(c bool)(bool)) {	
 		return func(a bool)(bool){return 1}
 	}
-	func main(x field,y func(x bool)(bool))(func(c bool)(bool)) {			
-		return a()
+	func main(x field,y func(x bool)(bool))(func(c bool)(bool)) {	
+		var b = a()
+		x,y = 234,
+			24444
+		return b
 	}
 
 `
