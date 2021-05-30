@@ -31,7 +31,10 @@ type Token struct {
 	readInLine int
 }
 
-func (ch Token) printType() string {
+func (ch Token) String() string {
+	if ch.Type == 0 {
+		return ""
+	}
 	if ch.isArray {
 		fmt.Sprintf("%v[%v]", ch.Type, ch.dimensions)
 	}
@@ -78,6 +81,7 @@ var predeclaredFunctions = []string{"SPLIT", "equal ", "BREAK", "ADD"}
 var operationMap = make(map[string]TokenType)
 var predeclaredFunctionsMap = make(map[string]bool)
 var keyWordMap map[string]TokenType
+var handle = make(map[string]func(...*function))
 
 func init() {
 
@@ -117,6 +121,8 @@ func init() {
 		"u16":    U16,
 		"u32":    U32,
 		"u64":    U64,
+		"true":   True,
+		"false":  False,
 	}
 
 }
@@ -159,6 +165,8 @@ const (
 	U16
 	U32
 	U64
+	True
+	False
 )
 
 func (ch TokenType) String() string {

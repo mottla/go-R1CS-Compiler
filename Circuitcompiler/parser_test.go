@@ -17,7 +17,7 @@ func test(a field, b func(a field))(field,field) {
 
 }
 `
-	parser := newParser(code, false)
+	parser := NewParser(code, false)
 	toks := parser.stackAllTokens()
 	functionInput, rest := splitAtFirstHighestStringType(toks[3:], "{")
 	fmt.Println(rest)
@@ -28,11 +28,11 @@ func test(a field, b func(a field))(field,field) {
 
 func TestArray(t *testing.T) {
 	code := `a[4][3]`
-	parser := newParser(code, false)
+	parser := NewParser(code, false)
 	toks := parser.stackAllTokens()
 	toks = toks[:len(toks)-1]
 	ct := Constraint{}
-	parser.parseExpression(&function{}, toks, &ct)
+	parser.parseExpression(toks, NewCircuit("", &function{}))
 	fmt.Println(ct)
 }
 func TestNewParse(t *testing.T) {
@@ -42,7 +42,7 @@ func TestNewParse(t *testing.T) {
 		return x[1][1]*in[0][0] 
 	}
 `
-	p := NewParse(code)
+	p := Parse(code)
 	container := p.Execute()
 
 	gates := container.OrderedGates()
@@ -76,7 +76,7 @@ func TestNewParse2(t *testing.T) {
 	}
 
 `
-	p := NewParse(code)
+	p := Parse(code)
 	container := p.Execute()
 
 	gates := container.OrderedGates()

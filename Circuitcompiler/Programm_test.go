@@ -24,7 +24,7 @@ func TestStaticIfProgram(t *testing.T) {
 	}
 
 `
-	p := NewParse(code)
+	p := Parse(code)
 	container := p.Execute()
 
 	gates := container.OrderedGates()
@@ -45,20 +45,20 @@ func TestFunction_SPLIT(t *testing.T) {
 		fmt.Println("s")
 	}
 }
+
 func TestForProgram(t *testing.T) {
 	code := `
 	func a()(func(c bool)(bool)) {	
-		return func(a bool)(bool){return 1}
+		return func(a bool)(bool){return true}
 	}
 	func main(x field,y func(x bool)(bool))(func(c bool)(bool)) {	
 		var b = a()
-		x,y = 234,
-			24444
 		return b
 	}
 
 `
-	program := NewParse(code)
+
+	program := Parse(code)
 	container := program.Execute()
 
 	gates := container.OrderedGates()
@@ -102,7 +102,7 @@ func TestForProgram(t *testing.T) {
 //		//fmt.Println(r1cs.O)
 //
 //		for _, io := range test.IO {
-//			inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, io.Inputs)
+//			inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, io.InputTypes)
 //
 //			fmt.Println("input")
 //			fmt.Println(inputs)

@@ -3,7 +3,6 @@ package Circuitcompiler
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"strconv"
 )
 
@@ -29,21 +28,6 @@ func (l *Parser) error(e string, a ...interface{}) {
 		//panic(fmt.Sprintf("%v ", e, ))
 	}
 }
-func (p *Parser) nextNonBreakToken() *Token {
-	tok, done := p.lexer.NextToken()
-	if done {
-		//close(p.done)
-		return &Token{Type: EOF}
-	}
-	for tok.Type == CommentToken {
-
-		tok = p.nextToken()
-	}
-	for tok.Identifier == "\n" {
-		tok = p.nextToken()
-	}
-	return tok
-}
 
 func (p *Parser) nextToken() *Token {
 	tok, done := p.lexer.NextToken()
@@ -57,30 +41,33 @@ func (p *Parser) nextToken() *Token {
 	return tok
 }
 
-func newParser(code string, log bool) (p *Parser) {
+func NewParser(code string, log bool) (p *Parser) {
 	lexer := New(code, ProbablyWhitespaceState)
 	lexer.Start()
 	return &Parser{constraintChan: make(chan *Constraint), tokenChannel: make(chan Token), done: make(chan struct{}), lexer: lexer, log: log}
 }
 
-func NewParse(code string) (p *Program) {
+func Parse(code string) (p *Program) {
 
-	parser := newParser(code, false)
+	parser := NewParser(code, false)
 	toks := parser.stackAllTokens()
 	p = newProgram()
 
-	parser.NEWPreCompile(p.globalFunction, toks)
+	parser.PreCompile(p.globalFunction, toks)
 
 	return p
 }
 
 // write some pattern matcher
-// var identifier = identifier|array
 
-// epx := (exp) | exp Operator exp | identifier(arg) | identifier | Number | identifier[exp] | func(arg)(out){stm} | func(arg)(out){stm}(callwith)
-//arg := exp | arg,exp
-//TODO make this return a function. then we immediately can decide the return type of an expression or?
-func (p *Parser) parseExpression(currentCircuit *function, stack []Token, constraint *Constraint) {
+//arrayCall := arrayCall[Number] | identifier
+//arrayDefine := [Number]arrayDefine | identifier
+//functionHeaderDefine := func(TypedArg) | func(TypedArg)(out)
+// epx := (exp) | exp Operator exp |  identifier | Number | arrayCall | identifier(call) | functionHeaderDefine{stm} | functionHeaderDefine{stm}(call) | arrayDefine
+// TypedArg := " " | identifier Type | TypedArg , identifier Type | identifier arrayDefine | identifier functionHeaderDefine
+// out := " " | Type | out , Type | arrayDefine | functionHeaderDefine
+//call := exp | call, exp
+func (p *Parser) parseExpression(stack []Token, inFkt *function) (outFkt *function) {
 	//(exp)->exp
 	stack = stripOfBrackets(stack)
 
@@ -91,174 +78,152 @@ func (p *Parser) parseExpression(currentCircuit *function, stack []Token, constr
 
 	//can only be IN | Number
 	if len(stack) == 1 {
-		if stack[0].Type == DecimalNumberToken || stack[0].Type == IDENTIFIER_VARIABLE {
-			constraint.Inputs = append(constraint.Inputs, &Constraint{Output: stack[0]})
-			return
+		if stack[0].Type == DecimalNumberToken {
+			stack[0].Type = FIELD
+			return stack[0].primitiveReturnfunction()
+		}
+		if stack[0].Type == True || stack[0].Type == False {
+			stack[0].Type = BOOL
+			return stack[0].primitiveReturnfunction()
+		}
+
+		if stack[0].Type == IDENTIFIER_VARIABLE {
+			v, ex := inFkt.findFunctionInBloodline(stack[0].Identifier)
+			if !ex {
+				panic("")
+			}
+			*inFkt = *v.flatCopy()
+			return inFkt
 		}
 
 		p.error("Variable or number expected, got %v ", stack[0])
 	}
 
+	//maybe use different split style.. we now read everyting if no operator comes.
 	l, binOperation, r := splitAtFirstHighestTokenType(stack, Operator)
 	l, r = stripOfBrackets(l), stripOfBrackets(r)
 
 	// exp Operator exp
 	if binOperation.Type&Operator != 0 {
-		newTok := Token{
-			Type:       UNASIGNEDVAR,
-			Identifier: combineString(stack),
-		}
-		c1 := &Constraint{Output: newTok}
-		constraint.Inputs = append(constraint.Inputs, c1)
-		constraint = c1
-		//p.parseExpression(v, c1)
-		//
-		c1.Inputs = append(c1.Inputs, &Constraint{
-			Output: binOperation,
-		})
 
-		if len(l) == 1 && len(r) == 1 {
-			p.parseExpression(currentCircuit, l, constraint)
-			p.parseExpression(currentCircuit, r, constraint)
-			return
-		}
-		if len(l) == 1 {
+		lfkt := p.parseExpression(l, NewCircuit("", inFkt.Context))
+		rfkt := p.parseExpression(r, NewCircuit("", inFkt.Context))
 
-			tok := Token{
-				Type:       UNASIGNEDVAR,
-				Identifier: combineString(r),
-			}
-			c2 := &Constraint{Output: tok}
-			p.parseExpression(currentCircuit, l, constraint)
-			constraint.Inputs = append(constraint.Inputs, c2)
-			p.parseExpression(currentCircuit, r, c2)
-			return
-		}
-		if len(r) == 1 {
+		return combineFunctions(binOperation.Identifier, lfkt, rfkt, inFkt.Context)
 
-			tok := Token{
-				Type:       UNASIGNEDVAR,
-				Identifier: combineString(l),
-			}
-			c2 := &Constraint{Output: tok}
-			constraint.Inputs = append(constraint.Inputs, c2)
-			p.parseExpression(currentCircuit, l, c2)
-			p.parseExpression(currentCircuit, r, constraint)
-			return
-		}
-
-		p.parseExpression(currentCircuit, l, constraint)
-		p.parseExpression(currentCircuit, r, constraint)
-
-		return
 	} else if binOperation.Type != 0 {
 		p.error("unsuported operation %v", binOperation)
 	}
 
 	if stack[0].Type == FUNCTION_CALL {
+		v, ex := inFkt.findFunctionInBloodline(stack[0].Identifier)
+		if !ex {
+			panic("")
+		}
+		rest, arguments := p.parseArguments(inFkt.Context, stack[1:], splitAtClosingBrackets)
 
-		args := &Constraint{Output: stack[0]}
-		constraint.Inputs = append(constraint.Inputs, args)
-		restAfterBracketsClosed := p.argumentParse(currentCircuit, stack[1:], splitAtClosingBrackets, args)
-		//TODO  fkt(34)*7
-		if len(restAfterBracketsClosed) != 0 {
-			if restAfterBracketsClosed[0].Identifier == "(" {
-				args := &Constraint{Output: stack[0]}
-				constraint.Inputs = append(constraint.Inputs, args)
-				n := append([]Token{{
-					Type: FUNCTION_CALL,
-				}}, restAfterBracketsClosed...)
-				p.parseExpression(currentCircuit, n, args)
-				return
+		*inFkt = *v.flatCopy()
+		inFkt.getsLoadedWith(arguments)
+		//whats the taskmap here?
+		if len(rest) != 0 {
+			if rest[0].Identifier == "(" {
+				rest[0].Type = FUNCTION_CALL
+
+				p.parseExpression(rest, inFkt)
+				return inFkt
 			}
 			panic("")
 		}
-		return
+		return inFkt
+	}
+	if stack[0].Type == FUNCTION_CALL && stack[0].Identifier == "(" {
+
+		rest, arguments := p.parseArguments(inFkt.Context, stack[1:], splitAtClosingBrackets)
+
+		inFkt.getsLoadedWith(arguments)
+
+		if len(rest) != 0 {
+			if rest[0].Identifier == "(" {
+				rest[0].Type = FUNCTION_CALL
+
+				p.parseExpression(rest, inFkt)
+				return inFkt
+			}
+			panic("")
+		}
+		return inFkt
 	}
 
 	if stack[0].Type == FUNCTION_DEFINE {
-		fkt := NewCircuit(fmt.Sprintf("unnamed%v", len(currentCircuit.functions)), currentCircuit)
-		currentCircuit.functions[fkt.Name] = fkt
+
 		p.Assert("(", stack[1])
 
 		inside, statement := splitAtFirstHighestStringType(stack[1:], "{")
 
-		p.PrepareFunctionSignature(fkt, inside)
+		p.PrepareFunctionSignature(inFkt, inside)
 
 		statement, restt, s := splitAtClosingSwingBrackets(statement)
 		if !s {
 			panic("closing brackets missing")
 		}
+		p.PreCompile(inFkt, statement)
 
 		if len(restt) != 0 && restt[0].Identifier == "(" {
-			ctr := &Constraint{
-				Output: Token{
-					Type:       FUNCTION_CALL,
-					Identifier: fkt.Name,
-				},
-			}
-			//currentCircuit or new circuit? should make no difference, or?
-			p.argumentParse(currentCircuit, restt, splitAtClosingBrackets, ctr)
-			constraint.Inputs = append(constraint.Inputs, ctr)
+			restt[0].Type = FUNCTION_CALL
+			p.parseExpression(restt, inFkt)
+			return inFkt
 		} else {
 			if len(restt) != 0 {
 				panic("")
 			}
-			ctr := &Constraint{
-				Output: Token{
-					Type:       IDENTIFIER_VARIABLE,
-					Identifier: fkt.Name,
-				},
-			}
 
-			constraint.Inputs = append(constraint.Inputs, ctr)
 		}
 		//now compile the function
-		p.NEWPreCompile(fkt, statement)
 
 		//check if the returns match the header description
 
-		ex, v := fkt.taskStack.PeekLast()
+		ex, v := inFkt.taskStack.PeekLast()
 		fktReturns := ex && v.Output.Type == RETURN
 
-		if fktReturns && len(v.Inputs) != len(fkt.Outputs) {
-			p.error("expect %v return values, got %v", len(fkt.Outputs), len(v.Inputs))
+		if len(inFkt.OutputTypes) != 0 && !fktReturns {
+			p.error("return missing")
 		}
-		if !fktReturns && len(fkt.Outputs) != 0 {
-			p.error("expect %v return values, got %v", len(fkt.Outputs), len(v.Inputs))
+		b, err := inFkt.hasEqualOutput(v.FktInputs)
+		if !b {
+			panic(err)
 		}
-		return
+		return inFkt
 	}
 
-	if stack[0].Type == IDENTIFIER_VARIABLE && stack[1].Identifier == "[" && stack[len(stack)-1].Identifier == "]" {
-		cr := &Constraint{Output: Token{
-			Type:       ARRAY_CALL,
-			Identifier: stack[0].Identifier},
-		}
-		constraint.Inputs = append(constraint.Inputs, cr)
-
-		l, r, _ := splitAtClosingSquareBrackets(stack[2:])
-		p.parseExpression(currentCircuit, l, cr)
-		for len(r) != 0 {
-			l, r, _ = splitAtClosingSquareBrackets(r)
-			p.parseExpression(currentCircuit, l, cr)
-		}
-		return
-	}
-	if stack[0].Identifier == "[" && stack[len(stack)-1].Identifier == "]" {
-
-		cr := &Constraint{Output: Token{
-			Type: ARRAY_DECLARE,
-		},
-		}
-		constraint.Inputs = append(constraint.Inputs, cr)
-		restAfterBracketsClosed := p.argumentParse(currentCircuit, stack, splitAtClosingSquareBrackets, cr)
-		// [1,b,c]
-		if len(restAfterBracketsClosed) != 0 {
-			p.error("array fdsaf")
-		}
-		return
-	}
+	//if stack[0].Type == IDENTIFIER_VARIABLE && stack[1].Identifier == "[" && stack[len(stack)-1].Identifier == "]" {
+	//	cr := &Constraint{Output: Token{
+	//		Type:       ARRAY_CALL,
+	//		Identifier: stack[0].Identifier},
+	//	}
+	//	constraint.Inputs = append(constraint.Inputs, cr)
+	//
+	//	l, r, _ := splitAtClosingSquareBrackets(stack[2:])
+	//	p.parseExpression(currentCircuit, l, cr)
+	//	for len(r) != 0 {
+	//		l, r, _ = splitAtClosingSquareBrackets(r)
+	//		p.parseExpression(currentCircuit, l, cr)
+	//	}
+	//	return
+	//}
+	//if stack[0].Identifier == "[" && stack[len(stack)-1].Identifier == "]" {
+	//
+	//	cr := &Constraint{Output: Token{
+	//		Type: ARRAY_DECLARE,
+	//	},
+	//	}
+	//	constraint.Inputs = append(constraint.Inputs, cr)
+	//	restAfterBracketsClosed := p.argumentParse(currentCircuit, stack, splitAtClosingSquareBrackets, cr)
+	//	// [1,b,c]
+	//	if len(restAfterBracketsClosed) != 0 {
+	//		p.error("array fdsaf")
+	//	}
+	//	return
+	//}
 
 	panic("unexpected reach")
 
@@ -266,8 +231,7 @@ func (p *Parser) parseExpression(currentCircuit *function, stack []Token, constr
 
 }
 
-//argument parse expects  bracket-arg-bracket
-func (p *Parser) argumentParse(currentCircuit *function, stack []Token, bracketSplitFunction func(in []Token) (cutLeft, cutRight []Token, success bool), constraint *Constraint) (rest []Token) {
+func (p *Parser) parseArguments(context *function, stack []Token, bracketSplitFunction func(in []Token) (cutLeft, cutRight []Token, success bool)) (rest []Token, args []*function) {
 
 	functionInput, rem, success := bracketSplitFunction(stack)
 
@@ -275,20 +239,20 @@ func (p *Parser) argumentParse(currentCircuit *function, stack []Token, bracketS
 		p.error("closing brackets missing")
 	}
 	if len(functionInput) == 0 {
-		return rem
+		return rem, nil
+
 	}
 	//arguments can be expressions, so we need to parse them
 	for arguments, remm := splitAtFirstHighestStringType(functionInput, ","); ; arguments, remm = splitAtFirstHighestStringType(remm, ",") {
 		arguments = removeLeadingAndTrailingBreaks(arguments)
-		p.parseExpression(currentCircuit, arguments, constraint)
+		nfk := NewCircuit("", context)
+		args = append(args, p.parseExpression(arguments, nfk))
+
 		if remm == nil {
 			break
 		}
 	}
-
-	//handle what comes after the function
-
-	return rem
+	return rem, args
 
 }
 
@@ -360,7 +324,7 @@ func (p *Parser) prepareFunctionHeader(current *function, stack []Token) {
 		//	}
 		//	return
 		//}
-		current.Inputs = append(current.Inputs, returnTypes{
+		current.InputTypes = append(current.InputTypes, returnTypes{
 			typ: tok,
 		})
 		current.functions[stack[0].Identifier] = tok.primitiveReturnfunction()
@@ -371,18 +335,12 @@ func (p *Parser) prepareFunctionHeader(current *function, stack []Token) {
 		next := NewCircuit(stack[0].Identifier, nil)
 		p.PrepareFunctionSignature(next, stack[2:])
 		current.functions[stack[0].Identifier] = next
-		current.Inputs = append(current.Inputs, returnTypes{
+		current.InputTypes = append(current.InputTypes, returnTypes{
 			functionReturn: true,
 			fkt:            next,
 		})
 		return
 	}
-
-	//arguments can be expressions, so we need to parse them
-	// todo what if we parse func( a func(x field,y bool)(field) , c field)
-	//then this primitive split does not work
-
-	//handle what comes after the function
 	p.error("not defined type %v", stack[1].Identifier)
 	return
 
@@ -405,7 +363,7 @@ func (p *Parser) prepareReturns(current *function, stack []Token) {
 		//	return
 		//}
 
-		current.Outputs = append(current.Outputs, returnTypes{
+		current.OutputTypes = append(current.OutputTypes, returnTypes{
 			typ: tok,
 		})
 		return
@@ -413,7 +371,7 @@ func (p *Parser) prepareReturns(current *function, stack []Token) {
 	if stack[0].Type == FUNCTION_DEFINE {
 		next := NewCircuit("", nil)
 		p.PrepareFunctionSignature(next, stack[1:])
-		current.Outputs = append(current.Outputs, returnTypes{
+		current.OutputTypes = append(current.OutputTypes, returnTypes{
 			functionReturn: true,
 			fkt:            next,
 		})
@@ -424,7 +382,7 @@ func (p *Parser) prepareReturns(current *function, stack []Token) {
 
 }
 
-func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
+func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 
 	tokens = removeLeadingAndTrailingBreaks(tokens)
 
@@ -440,34 +398,34 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 
 	switch tokens[0].Type {
 	case PUBLIC:
-		toks := Tokens{toks: tokens[1:]}
-		tok := toks.next()
-		if tok.Identifier != "{" {
-			p.error("define publics via: 'public {a,b,c}' , got %v ", tok)
-		}
-		//NOTE THAT WE GOT ERROR WHEN USING &Constraint{} instead of Constraint{}, dont understand why
-		buffer := Constraint{}
-
-		rest := p.argumentParse(currentCircuit, toks.toks, splitAtClosingSwingBrackets, &buffer)
-		for _, publicInput := range buffer.Inputs {
-			a := currentCircuit.resolveArrayName(publicInput.Output.Identifier, publicInput.Inputs)
-			currentCircuit.SNARK_Public_Statement = append(currentCircuit.SNARK_Public_Statement, a)
-		}
-		p.NEWPreCompile(currentCircuit, rest)
+		//toks := Tokens{toks: tokens[1:]}
+		//tok := toks.next()
+		//if tok.Identifier != "{" {
+		//	p.error("define publics via: 'public {a,b,c}' , got %v ", tok)
+		//}
+		////NOTE THAT WE GOT ERROR WHEN USING &Constraint{} instead of Constraint{}, dont understand why
+		//buffer := Constraint{}
+		//
+		//rest := p.parseArguments(currentCircuit, toks.toks, splitAtClosingSwingBrackets, &buffer)
+		//for _, publicInput := range buffer.Inputs {
+		//	a := currentCircuit.resolveArrayName(publicInput.Output.Identifier, publicInput.Inputs)
+		//	currentCircuit.SNARK_Public_Statement = append(currentCircuit.SNARK_Public_Statement, a)
+		//}
+		//p.PreCompile(currentCircuit, rest)
 	case IMPORT:
-		if len(tokens) == 1 || tokens[1].Type != IDENTIFIER_VARIABLE {
-			p.error("import failed")
-		}
-
-		dat, err := ioutil.ReadFile(tokens[1].Identifier)
-		if err != nil {
-			panic(err)
-		}
-		tmpParser := newParser(string(dat), false)
-		t := tmpParser.stackAllTokens()
-		//we glue em together, but remove the EOF from t first
-		p.NEWPreCompile(currentCircuit, append(t[:len(t)-1], tokens[2:]...))
-		//TODO then?
+		//if len(tokens) == 1 || tokens[1].Type != IDENTIFIER_VARIABLE {
+		//	p.error("import failed")
+		//}
+		//
+		//dat, err := ioutil.ReadFile(tokens[1].Identifier)
+		//if err != nil {
+		//	panic(err)
+		//}
+		//tmpParser := NewParser(string(dat), false)
+		//t := tmpParser.stackAllTokens()
+		////we glue em together, but remove the EOF from t first
+		//p.PreCompile(currentCircuit, append(t[:len(t)-1], tokens[2:]...))
+		////TODO then?
 	case FUNCTION_DEFINE:
 		//func maaain(){}
 		p.AssertIdentifiedType(FUNCTION_CALL, tokens[1])
@@ -496,21 +454,22 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 		//we first compile whats outside the function. so
 		//this enables us, to access not yet defined functions inside
 		//the function scope
-		p.NEWPreCompile(currentCircuit, rest)
+		p.PreCompile(currentCircuit, rest)
 
 		//now compile the function
-		p.NEWPreCompile(fkt, inside)
+		p.PreCompile(fkt, inside)
 
 		//check if the returns match the header description
 
 		ex, v := fkt.taskStack.PeekLast()
 		fktReturns := ex && v.Output.Type == RETURN
 
-		if fktReturns && len(v.Inputs) != len(fkt.Outputs) {
-			p.error("expect %v return values, got %v", len(fkt.Outputs), len(v.Inputs))
+		if len(fkt.OutputTypes) != 0 && !fktReturns {
+			p.error("return missing")
 		}
-		if !fktReturns && len(fkt.Outputs) != 0 {
-			p.error("expect %v return values, got %v", len(fkt.Outputs), len(v.Inputs))
+		b, err := fkt.hasEqualOutput(v.FktInputs)
+		if !b {
+			panic(err)
 		}
 
 		return
@@ -555,7 +514,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 			}
 		}
 
-		p.NEWPreCompile(currentCircuit, r)
+		p.PreCompile(currentCircuit, r)
 		for i, v := range statements {
 			identifierLeadingToTheStatement := fmt.Sprintf("ifStatmement%v", ifFunction.taskStack.len())
 			ifConstraint := &Constraint{
@@ -566,14 +525,14 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 			}
 			if i == 0 {
 				p.AssertTypes(conditions[i], IF)
-				p.parseExpression(currentCircuit, conditions[0][1:], ifConstraint)
+				ifConstraint.FktInputs = append(ifConstraint.FktInputs, p.parseExpression(conditions[0][1:], NewCircuit("", currentCircuit)))
 			} else if i < len(statements)-1 {
 				p.AssertTypes(conditions[i], ELSE, IF)
-				p.parseExpression(currentCircuit, conditions[i][2:], ifConstraint)
+				ifConstraint.FktInputs = append(ifConstraint.FktInputs, p.parseExpression(conditions[i][2:], NewCircuit("", currentCircuit)))
 			} else {
 				if len(conditions[i]) > 1 {
 					p.AssertTypes(conditions[i], ELSE, IF)
-					p.parseExpression(currentCircuit, conditions[i][2:], ifConstraint)
+					ifConstraint.FktInputs = append(ifConstraint.FktInputs, p.parseExpression(conditions[i][2:], NewCircuit("", currentCircuit)))
 				} else {
 					p.AssertTypes(conditions[i], ELSE)
 					ifConstraint.Output.Type = ELSE
@@ -588,91 +547,26 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 
 			ifFunction.taskStack.add(ifConstraint)
 
-			p.NEWPreCompile(tsk, v)
+			p.PreCompile(tsk, v)
 		}
 
 		return
 	case FOR:
 		// TODO for loops a just syntactic suggar for a recursive function
-		// for declare; till; increment === var declare; func loop(till,increment){ if till then return; increment(); return loop(till, increment) }
-		// for (  a<5 ; a+=1)
-		ForConst := &Constraint{Output: Token{Type: FOR}, Inputs: []*Constraint{}}
-		var success bool
-		if tokens[1].Identifier != "(" {
-			p.error("brackets '(' missing, got %v", tokens[1])
-		}
-		// a = 4;
-		//l, r := splitTokensAtFirstString(tokens[2:], ";")
-		//if r[0].identifierLeadingToTheStatement != ";" {
-		//	p.error("';' expected, got %v", r[0])
-		//}
-		//r = r[1:]
-		//if b, err := isVariableAssignment(l[1:]); !b {
-		//	p.error(err)
-		//}
-		//varConst := &Constraint{
-		//	Output: Token{
-		//		Type:  VARIABLE_DECLARE,
-		//		identifierLeadingToTheStatement: l[1].identifierLeadingToTheStatement,
-		//	},
-		//}
-		//p.parseExpression(l[3:], varConst)
-		//ForConst.InputIdentifiers = append(ForConst.InputIdentifiers, varConst)
 
-		// a <5;
-		l, r := splitTokensAtFirstString(tokens[2:], ";")
-		if r[0].Identifier != ";" {
-			p.error("';' expected, got %v", r[0])
-		}
-		r = r[1:]
-		p.parseExpression(currentCircuit, l, ForConst)
-		//a = a+1)
-		l, r, success = splitAtClosingBrackets(r)
-		if !success {
-			p.error("closing brackets missing")
-		}
-		//if b, _, err := isVariableAssignment(l); !b {
-		//	p.error(err)
-		//}
-
-		overload, expr := splitTokensAtFirstString(l, "=")
-
-		////hannes = 42
-		//if b, rem, _ := isVariableAssignment(l); b {
-		varConst := &Constraint{
-			Output: Token{
-				Type: VARIABLE_OVERLOAD,
-			},
-		}
-		p.parseExpression(currentCircuit, overload, varConst)
-		p.parseExpression(currentCircuit, expr[1:], varConst)
-
-		ForConst.Inputs = append(ForConst.Inputs, varConst)
-
-		p.constraintChan <- ForConst
-		r = removeLeadingBreaks(r)
-
-		if r[0].Identifier != "{" {
-			p.error("brackets '{' missing, got %v", r[0])
-		}
-		l, r, success = splitAtClosingSwingBrackets(r[1:])
-		if !success {
-			p.error("closing brackets missing")
-		}
-
-		//p.statementMode(r)
 		break
-
 	case RETURN:
-		//return (1+a)
-		l, _ := splitTokensAtFirstString(tokens, "\n")
-		returnCOnstraint := &Constraint{
+		re := &Constraint{
 			Output: Token{
 				Type: RETURN,
 			},
 		}
-		p.argumentParse(currentCircuit, l[1:], splitNothing, returnCOnstraint)
-		currentCircuit.taskStack.add(returnCOnstraint)
+
+		tokens, re.FktInputs = p.parseArguments(currentCircuit, tokens[1:], splitNothing)
+		currentCircuit.taskStack.add(re)
+		if len(tokens) != 0 {
+			fmt.Sprintf("unreachable stuff after return..")
+		}
 		return
 	case FUNCTION_CALL:
 		//fkt(args...)    equal(a,2) -> creates assertion gates s.t. a=2
@@ -686,10 +580,10 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 			}
 		}
 		//todo.. what if we call a function with a function call as argument, of a function that has not yet been declared
-		r := p.argumentParse(currentCircuit, tokens[1:], splitAtClosingBrackets, varConst)
+		tokens, varConst.FktInputs = p.parseArguments(currentCircuit, tokens[1:], splitAtClosingBrackets)
 		currentCircuit.taskStack.add(varConst)
 
-		p.NEWPreCompile(currentCircuit, r)
+		p.PreCompile(currentCircuit, tokens)
 		return
 	case IDENTIFIER_VARIABLE: //variable overloading -> a,b = a * 4 , 7
 
@@ -715,7 +609,7 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 			arguments = removeLeadingAndTrailingBreaks(arguments)
 
 			//the first input is the thing to overwrite
-			p.parseExpression(currentCircuit, arguments, toOverload)
+			toOverload.FktInputs = append(toOverload.FktInputs, p.parseExpression(arguments, NewCircuit("", currentCircuit)))
 			if _, ex := currentCircuit.findFunctionInBloodline(arguments[0].Identifier); !ex {
 				p.error(fmt.Sprintf("variable %s not declared", arguments[0].Identifier))
 			}
@@ -726,41 +620,31 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 		currentCircuit.taskStack.add(varConst)
 		//before we parse the rhs, finish of the rest
 
-		args := []func(){}
 		var rest []Token
-		for arguments, remm := splitAtFirstHighestStringType(expr, ","); len(toOverload.Inputs) > len(args); arguments, remm = splitAtFirstHighestStringType(remm, ",") {
+		for arguments, remm := splitAtFirstHighestStringType(expr, ","); len(toOverload.Inputs) > len(overloadWith.FktInputs); arguments, remm = splitAtFirstHighestStringType(remm, ",") {
 			arguments = removeLeadingAndTrailingBreaks(arguments)
 
-			if len(toOverload.Inputs) == 1+len(args) {
+			if len(toOverload.Inputs) == 1+len(overloadWith.FktInputs) {
 				//the first input is the thing to overwrite
 				arguments, rest = splitAtFirstHighestStringType(arguments, "\n")
-				args = append(args, func() {
-					p.parseExpression(currentCircuit, arguments, overloadWith)
-				})
+
+				overloadWith.FktInputs = append(overloadWith.FktInputs, p.parseExpression(arguments, NewCircuit("", currentCircuit)))
+
 				break
 			}
 			//the first input is the thing to overwrite
-			args = append(args, func() {
-				p.parseExpression(currentCircuit, arguments, overloadWith)
-			})
+
+			overloadWith.FktInputs = append(overloadWith.FktInputs, p.parseExpression(arguments, NewCircuit("", currentCircuit)))
 
 		}
 
-		p.NEWPreCompile(currentCircuit, rest)
-		for _, v := range args {
-			v()
-		}
+		p.PreCompile(currentCircuit, rest)
+
 		return
 	case VARIABLE_DECLARE:
 		//var a = smth
 		//var a = []bool{true}
-
-		//TODO i should stop treating arrays as something speacial, they are just
-		//syntactic suggar for a function
-		// say bool[2] a = [k,z] ====  func a(x){ if x =0 return k, else if x =1 reutrn z, else return nil }
-		//bool a = 0/1
 		//var a = func()(bool) {return 0/1}
-		//bool[4][4] a = [[],[],[],[]]
 		//var a = func(x field,y field)(bool) {return 0/1}
 		assignmentLine, afterBreak := splitAtFirstHighestStringType(tokens, "\n")
 
@@ -768,56 +652,22 @@ func (p *Parser) NEWPreCompile(currentCircuit *function, tokens []Token) {
 
 		id := lhs[1]
 		p.AssertIdentifier(id)
-		if len(rhs[1:]) == 0 {
+		if len(rhs[1:]) == 0 || len(lhs) != 2 {
 			p.error("assignment missing")
 		}
 		if _, ex := currentCircuit.functions[(id.Identifier)]; ex {
 			panic(fmt.Sprintf("variable %s already declared", id.Identifier))
 		}
+		if _, ex := predeclaredFunctionsMap[(id.Identifier)]; ex {
+			panic(fmt.Sprintf("variable %s already declared", id.Identifier))
+		}
 		fkt := NewCircuit(id.Identifier, currentCircuit)
-		tok := Token{
-			Identifier: id.Identifier,
-		}
-
-		//read and set the declared array size on the lhs
-		if rhs[0].Identifier == "[" {
-			//var a = []bool{}
-			dim, r := readTokenTillType(rhs)
-			rhs = r
-
-			tok.Type = rhs[0].Type
-			tok.isArray = true
-			tok.dimensions = p.loadDimension(dim, []int64{})
-		} else if rhs[0].Type&Types == 0 {
-			//var a = foo()
-			// -> a gets returned type of foo (if foo only returns 1 argument
-
-			//var a = foo
-			//-> a becomes foo
-
-			//var a = func(){}
-
-			//var a = func(){}()
-		} else {
-
-		}
-		tok.Type = rhs[0].Type
-
-		varConst := &Constraint{
-			Output: tok,
-		}
 		currentCircuit.functions[(id.Identifier)] = fkt
-		currentCircuit.taskStack.add(&Constraint{
-			Output: Token{
-				Type:       VARIABLE_DECLARE,
-				Identifier: id.Identifier,
-			},
-			Inputs: nil,
-		})
-		p.NEWPreCompile(currentCircuit, afterBreak)
 
-		p.parseExpression(currentCircuit, rhs[1:], varConst)
-		p.loadArray(currentCircuit, id.Identifier, varConst.Inputs[0], varConst.Output.dimensions, []int{}, tok)
+		p.parseExpression(rhs[1:], fkt)
+
+		p.PreCompile(currentCircuit, afterBreak)
+
 		return
 
 	default:
@@ -870,16 +720,16 @@ func (p *Parser) loadArray(current *function, name string, constaint *Constraint
 	//	switch c.Output.Type {
 	//	case FUNCTION_CALL:
 	//		if f, ex := current.findFunctionInBloodline(c.Output.Identifier); ex {
-	//			if len(f.Outputs) != 1 || f.Outputs[0].typ.Type != expecedType {
-	//				panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, f.Outputs[0].typ.Type))
+	//			if len(f.OutputTypes) != 1 || f.OutputTypes[0].typ.Type != expecedType {
+	//				panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, f.OutputTypes[0].typ.Type))
 	//			}
 	//		} else {
 	//			panic(fmt.Sprintf("variable %s not declared", c.Output.Identifier))
 	//		}
 	//	case IDENTIFIER_VARIABLE:
 	//		if f, ex := current.findFunctionInBloodline(c.Output.Identifier); ex {
-	//			if len(f.Inputs) != 0 || len(f.Outputs) != 1 || f.Outputs[0].typ.Type != expecedType {
-	//				panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, f.Outputs[0].typ.Type))
+	//			if len(f.InputTypes) != 0 || len(f.OutputTypes) != 1 || f.OutputTypes[0].typ.Type != expecedType {
+	//				panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, f.OutputTypes[0].typ.Type))
 	//			}
 	//		} else {
 	//			panic(fmt.Sprintf("variable %s not declared", c.Output.Identifier))
@@ -888,8 +738,8 @@ func (p *Parser) loadArray(current *function, name string, constaint *Constraint
 	//		checkRangeValidity(c.Output.value, expecedType)
 	//	case ARRAY_CALL:
 	//		if f, ex := current.findFunctionInBloodline(c.Output.Identifier); ex {
-	//			if len(f.Outputs) != 1 || f.Outputs[0].typ.Type != expecedType {
-	//				panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, f.Outputs[0].typ.Type))
+	//			if len(f.OutputTypes) != 1 || f.OutputTypes[0].typ.Type != expecedType {
+	//				panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, f.OutputTypes[0].typ.Type))
 	//			}
 	//		} else {
 	//			panic(fmt.Sprintf("variable %s not declared", c.Output.Identifier))
@@ -917,7 +767,7 @@ func (p *Parser) loadArray(current *function, name string, constaint *Constraint
 		for i := 0; i < int(dim[0]); i++ {
 			id := st + fmt.Sprintf("[%v]", i)
 			// should we check if the assigned types match not, or at compile time?
-			//staticTypeCheck(constaint.Inputs[i])
+			//staticTypeCheck(constaint.InputTypes[i])
 			current.functions[id] = constaint.Inputs[i].primitiveReturnfunction(expecedType)
 		}
 		return
@@ -976,14 +826,6 @@ func removeLeadingBreaks(in []Token) (out []Token) {
 	}
 	return in
 
-}
-
-func combineString(in []Token) string {
-	out := ""
-	for _, s := range in {
-		out += s.Identifier
-	}
-	return out
 }
 
 func (p *Parser) stackAllTokens() []Token {
@@ -1086,7 +928,7 @@ func splitAtFirstHighestTokenType(in []Token, splitAt TokenType) (cutLeft []Toke
 }
 
 func stripOfBrackets(in []Token) []Token {
-	if isSurroundedByBrackets(in) {
+	if isSurroundedByBrackets(in) && in[0].Type != FUNCTION_CALL {
 		return stripOfBrackets(in[1 : len(in)-1])
 	}
 	return in
@@ -1148,8 +990,9 @@ func splitAtClosingStringBrackets(in []Token, open, close string) (cutLeft, cutR
 
 // Constraint is the data structure of a flat code operation
 type Constraint struct {
-	Output Token
-	Inputs []*Constraint
+	Output    Token
+	Inputs    []*Constraint
+	FktInputs []*function
 }
 
 func (c Constraint) String() string {
@@ -1159,12 +1002,17 @@ func (c Constraint) String() string {
 //clone returns a deep copy of c
 func (c *Constraint) clone() *Constraint {
 	in := make([]*Constraint, len(c.Inputs))
+	fkts := make([]*function, len(c.FktInputs))
 	for i, cc := range c.Inputs {
 		in[i] = cc.clone()
 	}
+	for i, cc := range c.FktInputs {
+		fkts[i] = cc.flatCopy()
+	}
 	return &Constraint{
-		Output: c.Output,
-		Inputs: in,
+		Output:    c.Output,
+		Inputs:    in,
+		FktInputs: fkts,
 	}
 }
 

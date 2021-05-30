@@ -69,7 +69,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		panic(fmt.Sprintf("variable %s not declared", currentConstraint.Output.Identifier))
 	case FOR:
 		//we check the condition each time we rerun the loop
-		//isStatic, isSat := currentCircuit.checkStaticCondition(currentConstraint.Inputs[0])
+		//isStatic, isSat := currentCircuit.checkStaticCondition(currentConstraint.InputTypes[0])
 		//for isSat && isStatic {
 		//	content := &Constraint{
 		//		Output: Token{
@@ -82,8 +82,8 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		//		return rets(f, true, fkt)
 		//	}
 		//	//the increment condition i += 1
-		//	currentCircuit.compile(currentConstraint.Inputs[1], gateCollector)
-		//	isStatic, isSat = currentCircuit.checkStaticCondition(currentConstraint.Inputs[0])
+		//	currentCircuit.compile(currentConstraint.InputTypes[1], gateCollector)
+		//	isStatic, isSat = currentCircuit.checkStaticCondition(currentConstraint.InputTypes[0])
 		//}
 		//return nil, false, nil
 	case UNASIGNEDVAR:
@@ -101,35 +101,10 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	case RETURN:
 		var r = []returnTyped{}
 
-		for _, v := range currentConstraint.Inputs {
-			bund, _ := currentCircuit.compile(v, gateCollector)
+		for _, v := range currentConstraint.FktInputs {
+			bund, _ := v.execute(gateCollector)
 
 			r = append(r, bund...)
-		}
-		//this check is redundant and performed in parser.go already
-		if len(r) != len(currentCircuit.Outputs) {
-			panic("assignment missmatch")
-		}
-		//we check if the returned types match the the declared types
-		for i, v := range currentCircuit.Outputs {
-			if r[i].preloadedFunction != nil {
-				if !v.functionReturn {
-					panic("")
-				}
-				if eq, err := v.fkt.hasEqualDescription(r[i].preloadedFunction); !eq {
-					panic(err)
-				}
-			} else {
-				//TODO handle array returns
-				if v.functionReturn {
-					if len(v.fkt.Outputs) != 1 || v.fkt.Outputs[0].typ.Type&Types == 0 || len(v.fkt.Inputs) != 0 {
-						panic("")
-					}
-					r[i].facs.SetType(v.fkt.Outputs[0].typ.Type)
-					continue
-				}
-				r[i].facs.SetType(v.typ.Type)
-			}
 		}
 
 		return r, true
@@ -163,10 +138,10 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				assign = bund[i].preloadedFunction
 			} else {
 				if bund[i].facs.Type() == DecimalNumberToken {
-					if len(fkt.Outputs) != 1 {
+					if len(fkt.OutputTypes) != 1 {
 						panic("")
 					}
-					bund[i].facs.SetType(fkt.Outputs[0].typ.Type)
+					bund[i].facs.SetType(fkt.OutputTypes[0].typ.Type)
 				}
 				assign = bund[i].facs.primitiveReturnfunction()
 			}
@@ -220,7 +195,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				var composed = bund.fac().primitiveReturnfunction()
 
 				for _, negatedCondition := range negatedConditions {
-					composed = combineFunctions("*", composed, negatedCondition)
+					composed = combineFunctions("*", composed, negatedCondition, currentCircuit)
 				}
 				bund, _ = composed.execute(gateCollector)
 
@@ -236,7 +211,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				var composed = bund.fac().primitiveReturnfunction()
 
 				for _, negatedCondition := range negatedConditions {
-					composed = combineFunctions("*", composed, negatedCondition)
+					composed = combineFunctions("*", composed, negatedCondition, currentCircuit)
 				}
 				bund, _ = composed.execute(gateCollector)
 
@@ -254,9 +229,9 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				//TODO how to handle overwrites?
 				rr, r := statement.execute(gateCollector)
 				if r {
-					composed := combineFunctions("*", conditionBund.fac().primitiveReturnfunction(), rr.fac().primitiveReturnfunction())
+					composed := combineFunctions("*", conditionBund.fac().primitiveReturnfunction(), rr.fac().primitiveReturnfunction(), currentCircuit)
 					for _, negatedCondition := range negatedConditions {
-						composed = combineFunctions("*", composed, negatedCondition)
+						composed = combineFunctions("*", composed, negatedCondition, currentCircuit)
 					}
 					f, _ := composed.execute(gateCollector)
 					result = addFactors(result, f.fac())
@@ -270,7 +245,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 					Type:       DecimalNumberToken,
 					Identifier: "1",
 				}
-				negateFkt := combineFunctions("-", one.primitiveReturnfunction(), conditionBund.fac().primitiveReturnfunction())
+				negateFkt := combineFunctions("-", one.primitiveReturnfunction(), conditionBund.fac().primitiveReturnfunction(), currentCircuit)
 				negatedConditions = append(negatedConditions, negateFkt)
 
 			}
@@ -281,7 +256,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		switch currentConstraint.Output.Identifier {
 		case "BREAK":
 			// DEBUG function. Set a break point somewhere and read all arguments that were passed to BREAK(args...)
-			//for _, v := range currentConstraint.Inputs {
+			//for _, v := range currentConstraint.InputTypes {
 			//	//in, _, _ := currentCircuit.compile(v.clone(), gateCollector)
 			//	//
 			//	//st := fmt.Sprintf("%v , %v", v.String(), in)
@@ -350,13 +325,8 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				inputs[i] = re[0].facs.primitiveReturnfunction()
 			}
 
-			//old := nxt.getFunctionInputs()
-			//old2 := nxt.Inputs
-			//defer nxt.setFunctionInputs(old2,old)
-			isReadyToEvaluate := nxt.getsLoadedWith(inputs)
-			if !isReadyToEvaluate {
-				return rets(nil, nxt), false
-			}
+			nxt.getsLoadedWith(inputs)
+
 			rr, _ := nxt.execute(gateCollector)
 
 			return rr, false

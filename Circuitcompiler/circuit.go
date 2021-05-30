@@ -14,8 +14,8 @@ type function struct {
 
 	InputIdentifiers       []string //the inputs of a circuit are circuits. Tis way we can pass functions as arguments
 	SNARK_Public_Statement []string
-	Inputs                 []returnTypes
-	Outputs                []returnTypes
+	InputTypes             []returnTypes
+	OutputTypes            []returnTypes
 
 	//parent function. this function inherits all functions wich are accessible from his anchestors. Recent overload Late
 	Context *function
@@ -33,12 +33,16 @@ type returnTypes struct {
 	typ            Token
 }
 
+func (r returnTypes) String() string {
+	return fmt.Sprintf("%v%v", r.fkt.description(), r.typ)
+}
+
 func NewCircuit(name string, context *function) *function {
 	return &function{
 		Name:             name,
 		InputIdentifiers: []string{},
-		Outputs:          []returnTypes{},
-		Inputs:           []returnTypes{},
+		OutputTypes:      []returnTypes{},
+		InputTypes:       []returnTypes{},
 		Context:          context,
 		functions:        make(map[string]*function),
 		taskStack:        newWatchstack(),
@@ -51,19 +55,59 @@ func (this *function) description() string {
 		return ""
 	}
 	res := "("
-	for _, v := range this.Inputs {
-		res += v.fkt.description()
-		res += v.typ.printType()
+	for _, v := range this.InputTypes {
+		res += v.String()
 		res += ","
 	}
 	res += ")->("
-	for _, v := range this.Outputs {
-		res += v.fkt.description()
-		res += v.typ.printType()
+	for _, v := range this.OutputTypes {
+		res += v.String()
 		res += ","
 	}
 	res += ")"
 	return res
+}
+
+func (a returnTypes) compare(in returnTypes) (bool, string) {
+	l := a.String()
+	r := in.String()
+	if strings.EqualFold(l, r) {
+		return true, ""
+	}
+
+	return false, fmt.Sprintf("expected %v, got %v", l, r)
+}
+func (v *function) outputs() []returnTypes {
+	//the function has not been fully loaded. it therefor returns itself
+	if len(v.InputIdentifiers) != 0 {
+		return []returnTypes{{
+			functionReturn: true,
+			fkt:            v}}
+	}
+	return v.OutputTypes
+}
+
+func (this *function) hasEqualOutput(thenThese []*function) (answer bool, error string) {
+	nrReturns := 0
+
+	collecteOutputs := []returnTypes{}
+	for _, v := range thenThese {
+		out := v.outputs()
+		nrReturns += len(out)
+		collecteOutputs = append(collecteOutputs, out...)
+	}
+
+	if len(this.OutputTypes) != nrReturns {
+		return false, fmt.Sprintf("expected %v return values, got %v", len(this.OutputTypes), len(thenThese))
+	}
+
+	for i, v := range this.OutputTypes {
+		if b, err := v.compare(collecteOutputs[i]); !b {
+			return false, err
+		}
+	}
+
+	return true, ""
 }
 
 func (this *function) hasEqualDescription(thenThat *function) (answer bool, error string) {
@@ -108,20 +152,20 @@ func (circ *function) flatCopy() (clone *function) {
 	copy(argumentIdentifiers, circ.InputIdentifiers)
 	clone.InputIdentifiers = argumentIdentifiers
 
-	outputs := make([]returnTypes, len(circ.Outputs))
-	clone.Outputs = outputs
+	outputs := make([]returnTypes, len(circ.OutputTypes))
+	clone.OutputTypes = outputs
 
-	for k, v := range circ.Outputs {
+	for k, v := range circ.OutputTypes {
 		outputs[k] = returnTypes{
 			functionReturn: v.functionReturn,
 			fkt:            v.fkt.flatCopy(),
 			typ:            v.typ,
 		}
 	}
-	inputs := make([]returnTypes, len(circ.Inputs))
-	clone.Inputs = inputs
+	inputs := make([]returnTypes, len(circ.InputTypes))
+	clone.InputTypes = inputs
 
-	for k, v := range circ.Inputs {
+	for k, v := range circ.InputTypes {
 		inputs[k] = returnTypes{
 			functionReturn: v.functionReturn,
 			fkt:            v.fkt.flatCopy(),
@@ -256,7 +300,7 @@ func (w *watchstack) addPrimitiveReturn(tok Token) {
 
 func (from Token) primitiveReturnfunction() (gives *function) {
 	rmp := NewCircuit(from.Identifier, nil)
-	rmp.Outputs = []returnTypes{{
+	rmp.OutputTypes = []returnTypes{{
 		functionReturn: false,
 		typ:            from,
 	}}
@@ -272,26 +316,31 @@ func (currentCircuit *function) getFunctionInputs() (oldInputs []*function) {
 
 }
 
-func (currentCircuit *function) getsLoadedWith(newInputs []*function) (allArgumentsLoaded bool) {
-	allArgumentsLoaded = len(currentCircuit.InputIdentifiers) == len(newInputs)
-	if len(currentCircuit.InputIdentifiers) < len(newInputs) {
+func (currentCircuit *function) getsLoadedWith(newInputs []*function) {
+
+	if len(currentCircuit.InputTypes) < len(newInputs) {
 		panic(fmt.Sprintf("%v takes %v arguments, got %v", currentCircuit.Name, len(currentCircuit.InputIdentifiers), len(newInputs)))
 	}
 	for i := 0; i < len(newInputs); i++ {
-		if v, ex := currentCircuit.functions[currentCircuit.InputIdentifiers[i]]; ex {
-			l := v.description()
-			r := newInputs[i].description()
-			if !strings.EqualFold(l, r) {
-				panic(fmt.Sprintf("%v takes %v arguments, got %v", currentCircuit.Name, l, r))
+		out := newInputs[i].outputs()
+		if len(out) != 1 {
+			//a()-> x,y
+			//so we dont allos foo( a()), even when foo takes two arguments. should we stay with go syntax?
+			panic("")
+		}
+		b, err := currentCircuit.InputTypes[i].compare(out[0])
+		if b {
+			currentCircuit.functions[currentCircuit.InputIdentifiers[0]] = newInputs[0]
+			currentCircuit.InputTypes = currentCircuit.InputTypes[1:]
+			currentCircuit.InputIdentifiers = currentCircuit.InputIdentifiers[1:]
 
-			}
-			currentCircuit.functions[currentCircuit.InputIdentifiers[i]] = newInputs[i]
 			continue
 		}
-		panic("cannot happen")
+
+		panic(err)
 
 	}
-	currentCircuit.InputIdentifiers = currentCircuit.InputIdentifiers[len(newInputs):]
+
 	return
 }
 
@@ -317,6 +366,12 @@ func (currentCircuit *function) resolveArrayName(id string, inputs []*Constraint
 }
 
 func (currentCircuit *function) execute(gateCollector *gateContainer) (bundle, bool) {
+	if len(currentCircuit.InputTypes) != 0 {
+		return bundle{returnTyped{
+			facs:              nil,
+			preloadedFunction: currentCircuit,
+		}}, false
+	}
 
 	for _, task := range currentCircuit.taskStack.data {
 		bundl, rett := currentCircuit.compile(task, gateCollector)
@@ -336,7 +391,7 @@ func (from *Constraint) primitiveReturnfunction(typ Token) (gives *function) {
 			Identifier: "",
 		},
 		Inputs: []*Constraint{from}})
-	rmp.Outputs = []returnTypes{{
+	rmp.OutputTypes = []returnTypes{{
 		functionReturn: false,
 		fkt:            nil,
 		typ:            typ,

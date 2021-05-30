@@ -315,13 +315,14 @@ func invertFactors(leftFactors factors) factors {
 }
 
 func (from factors) primitiveReturnfunction() (gives *function) {
-	if len(from) == 0 {
-		return &function{}
-	}
-	if len(from) == 1 {
-		return from[0].primitiveReturnfunction()
-	}
-	return combineFunctions("+", from[0].primitiveReturnfunction(), from[1:].primitiveReturnfunction())
+	//if len(from) == 0 {
+	//	return &function{}
+	//}
+	//if len(from) == 1 {
+	//	return from[0].primitiveReturnfunction()
+	//}
+	//return combineFunctions("+", from[0].primitiveReturnfunction(), from[1:].primitiveReturnfunction())
+	panic("")
 }
 
 func (from factor) primitiveReturnfunction() (gives *function) {
@@ -334,7 +335,7 @@ func (from factor) primitiveReturnfunction() (gives *function) {
 		return from.Typ.primitiveReturnfunction()
 	}
 	rmp := NewCircuit(from.Typ.Identifier, nil)
-	rmp.Outputs = []returnTypes{{
+	rmp.OutputTypes = []returnTypes{{
 		functionReturn: false,
 		fkt:            nil,
 		typ: Token{
@@ -367,53 +368,19 @@ func (from factor) primitiveReturnfunction() (gives *function) {
 }
 
 //TODO add assertions
-func combineFunctions(operation string, a, b *function) *function {
-	//if a.isNumber && b.isNumber {
-	//	switch operation {
-	//	case "*":
-	//		f := factor{
-	//			Typ: Token{
-	//				Type:       DecimalNumberToken,
-	//				Identifier: utils.Field.ArithmeticField.Mul(a.value, b.value).String(),
-	//			},
-	//			multiplicative: utils.Field.ArithmeticField.Mul(a.value, b.value),
-	//		}
-	//		return f.primitiveReturnfunction()
-	//	case "/":
-	//		f := factor{
-	//			Typ: Token{
-	//				Type:       DecimalNumberToken,
-	//				Identifier: utils.Field.ArithmeticField.Div(a.value, b.value).String(),
-	//			},
-	//			multiplicative: utils.Field.ArithmeticField.Div(a.value, b.value),
-	//		}
-	//		return f.primitiveReturnfunction()
-	//	case "-":
-	//		f := factor{
-	//			Typ: Token{
-	//				Type:       DecimalNumberToken,
-	//				Identifier: utils.Field.ArithmeticField.Sub(a.value, b.value).String(),
-	//			},
-	//			multiplicative: utils.Field.ArithmeticField.Sub(a.value, b.value),
-	//		}
-	//		return f.primitiveReturnfunction()
-	//	case "+":
-	//		f := factor{
-	//			Typ: Token{
-	//				Type:       DecimalNumberToken,
-	//				Identifier: utils.Field.ArithmeticField.Add(a.value, b.value).String(),
-	//			},
-	//			multiplicative: utils.Field.ArithmeticField.Add(a.value, b.value),
-	//		}
-	//		return f.primitiveReturnfunction()
-	//	default:
-	//
-	//	}
-	//}
+func combineFunctions(operation string, l, r, context *function) *function {
 
-	rmp := NewCircuit("", nil)
-	rmp.functions[a.Name] = a
-	rmp.functions[b.Name] = b
+	rmp := NewCircuit("", context)
+	if len(l.OutputTypes) != 1 {
+		panic("")
+	}
+	if eq, err := l.hasEqualDescription(r); !eq {
+		panic(err)
+	}
+	rmp.OutputTypes = l.OutputTypes
+	idL, idR := "l", "r"
+	rmp.functions[idL] = l
+	rmp.functions[idR] = r
 	rmp.taskStack.add(&Constraint{
 		Output: Token{
 			Type:       RETURN,
@@ -434,12 +401,12 @@ func combineFunctions(operation string, a, b *function) *function {
 					}, {
 						Output: Token{
 							Type:       FUNCTION_CALL,
-							Identifier: a.Name,
+							Identifier: idL,
 						},
 					}, {
 						Output: Token{
 							Type:       FUNCTION_CALL,
-							Identifier: b.Name,
+							Identifier: idR,
 						},
 					}},
 			},
