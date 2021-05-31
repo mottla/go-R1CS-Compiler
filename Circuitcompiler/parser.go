@@ -195,35 +195,46 @@ func (p *Parser) parseExpression(stack []Token, inFkt *function) (outFkt *functi
 		return inFkt
 	}
 
-	//if stack[0].Type == IDENTIFIER_VARIABLE && stack[1].Identifier == "[" && stack[len(stack)-1].Identifier == "]" {
-	//	cr := &Constraint{Output: Token{
-	//		Type:       ARRAY_CALL,
-	//		Identifier: stack[0].Identifier},
-	//	}
-	//	constraint.Inputs = append(constraint.Inputs, cr)
-	//
-	//	l, r, _ := splitAtClosingSquareBrackets(stack[2:])
-	//	p.parseExpression(currentCircuit, l, cr)
-	//	for len(r) != 0 {
-	//		l, r, _ = splitAtClosingSquareBrackets(r)
-	//		p.parseExpression(currentCircuit, l, cr)
-	//	}
-	//	return
-	//}
-	//if stack[0].Identifier == "[" && stack[len(stack)-1].Identifier == "]" {
-	//
-	//	cr := &Constraint{Output: Token{
-	//		Type: ARRAY_DECLARE,
-	//	},
-	//	}
-	//	constraint.Inputs = append(constraint.Inputs, cr)
-	//	restAfterBracketsClosed := p.argumentParse(currentCircuit, stack, splitAtClosingSquareBrackets, cr)
-	//	// [1,b,c]
-	//	if len(restAfterBracketsClosed) != 0 {
-	//		p.error("array fdsaf")
-	//	}
-	//	return
-	//}
+	if stack[0].Type == ARRAY_CALL {
+		tok := stack[0]
+		p.loadDimension()
+
+		v, ex := inFkt.findFunctionInBloodline(stack[0].Identifier)
+		if !ex {
+			panic("")
+		}
+		rest, arguments := p.parseArguments(inFkt.Context, stack[1:], splitAtClosingBrackets)
+
+		*inFkt = *v.flatCopy()
+		inFkt.getsLoadedWith(arguments)
+		//whats the taskmap here?
+		if len(rest) != 0 {
+			if rest[0].Identifier == "(" {
+				rest[0].Type = FUNCTION_CALL
+
+				p.parseExpression(rest, inFkt)
+				return inFkt
+			}
+			panic("")
+		}
+		return inFkt
+
+		return
+	}
+	if stack[0].Identifier == "[" && stack[len(stack)-1].Identifier == "]" {
+
+		cr := &Constraint{Output: Token{
+			Type: ARRAY_DECLARE,
+		},
+		}
+		constraint.Inputs = append(constraint.Inputs, cr)
+		restAfterBracketsClosed := p.argumentParse(currentCircuit, stack, splitAtClosingSquareBrackets, cr)
+		// [1,b,c]
+		if len(restAfterBracketsClosed) != 0 {
+			p.error("array fdsaf")
+		}
+		return
+	}
 
 	panic("unexpected reach")
 
@@ -621,10 +632,10 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 		//before we parse the rhs, finish of the rest
 
 		var rest []Token
-		for arguments, remm := splitAtFirstHighestStringType(expr, ","); len(toOverload.Inputs) > len(overloadWith.FktInputs); arguments, remm = splitAtFirstHighestStringType(remm, ",") {
+		for arguments, remm := splitAtFirstHighestStringType(expr, ","); len(toOverload.FktInputs) > len(overloadWith.FktInputs); arguments, remm = splitAtFirstHighestStringType(remm, ",") {
 			arguments = removeLeadingAndTrailingBreaks(arguments)
 
-			if len(toOverload.Inputs) == 1+len(overloadWith.FktInputs) {
+			if len(toOverload.FktInputs) == 1+len(overloadWith.FktInputs) {
 				//the first input is the thing to overwrite
 				arguments, rest = splitAtFirstHighestStringType(arguments, "\n")
 
@@ -680,6 +691,7 @@ func (p *Parser) loadDimension(toks []Token, in []int64) (res []int64) {
 	if len(toks) == 0 {
 		return in
 	}
+
 	if len(toks) < 3 {
 		p.error("invalid array")
 	}

@@ -542,6 +542,11 @@ func IdentState(l *Lexer) StateFunc {
 		l.Emit(FUNCTION_CALL)
 		return ProbablyWhitespaceState
 	}
+	if peek == '[' {
+		//l.Next()
+		l.Emit(ARRAY_CALL)
+		return ProbablyWhitespaceState
+	}
 
 	//it wasnt a keyword, so we assume its an identifier
 	//identifiers do not require a whitespace (like func foo(), has '(' after identifier 'foo')

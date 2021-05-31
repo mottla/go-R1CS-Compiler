@@ -53,6 +53,7 @@ func TestForProgram(t *testing.T) {
 	}
 	func main(x field,y func(x bool)(bool))(func(c bool)(bool)) {	
 		var b = a()
+		x = x*x*45 * 345
 		return b
 	}
 

@@ -103,24 +103,19 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 
 		for _, v := range currentConstraint.FktInputs {
 			bund, _ := v.execute(gateCollector)
-
 			r = append(r, bund...)
 		}
 
 		return r, true
 	case VARIABLE_OVERLOAD:
 		var bund bundle
-		for _, v := range currentConstraint.Inputs[1].Inputs {
-			re, _ := currentCircuit.compile(v, gateCollector)
+		for _, v := range currentConstraint.Inputs[1].FktInputs {
+			re, _ := currentCircuit.execute(gateCollector)
 			bund = append(bund, re...)
 		}
 
-		if len(bund) != len(currentConstraint.Inputs[0].Inputs) {
-			panic("assignment missmatch")
-		}
-
 		//range over the
-		for i, v := range currentConstraint.Inputs[0].Inputs {
+		for i, v := range currentConstraint.Inputs[0].FktInputs {
 			var toOverloadIdentifier = v.Output.Identifier
 
 			if v.Output.Type == ARRAY_CALL {

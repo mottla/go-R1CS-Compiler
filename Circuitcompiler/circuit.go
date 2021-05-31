@@ -156,29 +156,20 @@ func (circ *function) flatCopy() (clone *function) {
 	clone.OutputTypes = outputs
 
 	for k, v := range circ.OutputTypes {
-		outputs[k] = returnTypes{
-			functionReturn: v.functionReturn,
-			fkt:            v.fkt.flatCopy(),
-			typ:            v.typ,
-		}
+		outputs[k] = v
+
 	}
 	inputs := make([]returnTypes, len(circ.InputTypes))
 	clone.InputTypes = inputs
 
 	for k, v := range circ.InputTypes {
-		inputs[k] = returnTypes{
-			functionReturn: v.functionReturn,
-			fkt:            v.fkt.flatCopy(),
-			typ:            v.typ,
-		}
+		inputs[k] = v
 	}
 	for k, v := range circ.functions {
-		f := v.flatCopy()
-		f.Context = clone
-		clone.functions[k] = f
+		clone.functions[k] = v
 	}
 
-	clone.taskStack = circ.taskStack.clone()
+	clone.taskStack = circ.taskStack
 	return
 }
 
