@@ -101,6 +101,11 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	case RETURN:
 		var r = []returnTyped{}
 
+		for _, v := range currentConstraint.Inputs {
+			bund, _ := currentCircuit.compile(v, gateCollector)
+			r = append(r, bund...)
+		}
+
 		for _, v := range currentConstraint.FktInputs {
 			bund, _ := v.execute(gateCollector)
 			r = append(r, bund...)
@@ -110,12 +115,12 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	case VARIABLE_OVERLOAD:
 		var bund bundle
 		for _, v := range currentConstraint.Inputs[1].FktInputs {
-			re, _ := currentCircuit.execute(gateCollector)
+			re, _ := v.execute(gateCollector)
 			bund = append(bund, re...)
 		}
 
 		//range over the
-		for i, v := range currentConstraint.Inputs[0].FktInputs {
+		for i, v := range currentConstraint.Inputs[0].Inputs {
 			var toOverloadIdentifier = v.Output.Identifier
 
 			if v.Output.Type == ARRAY_CALL {
@@ -124,28 +129,24 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 
 			context, ex := currentCircuit.getCircuitContainingFunctionInBloodline(toOverloadIdentifier)
 			if !ex {
-				panic("does not exist")
+				panic("should be cought at parsing already")
 			}
 
-			fkt, _ := context.functions[toOverloadIdentifier]
-			var assign *function
-			if bund[i].facs == nil {
-				assign = bund[i].preloadedFunction
-			} else {
-				if bund[i].facs.Type() == DecimalNumberToken {
-					if len(fkt.OutputTypes) != 1 {
-						panic("")
-					}
-					bund[i].facs.SetType(fkt.OutputTypes[0].typ.Type)
-				}
-				assign = bund[i].facs.primitiveReturnfunction()
-			}
-			//overwrite
+			//fkt, _ := context.functions[toOverloadIdentifier]
+			//var assign *function
+			//if bund[i].facs == nil {
+			//	assign = bund[i].preloadedFunction
+			//} else {
+			//	if bund[i].facs.Type() == DecimalNumberToken {
+			//		if len(fkt.OutputTypes) != 1 {
+			//			panic("")
+			//		}
+			//		bund[i].facs.SetType(fkt.OutputTypes[0].typ.Type)
+			//	}
+			//	assign = bund[i].facs.primitiveReturnfunction()
+			//}
 
-			if eq, err := fkt.hasEqualDescription(assign); !eq {
-				panic(err)
-			}
-			context.functions[toOverloadIdentifier] = assign
+			context.functions[toOverloadIdentifier] = currentConstraint.Inputs[1].FktInputs[i]
 		}
 		return emptyRets()
 	case ARRAY_CALL:

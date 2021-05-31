@@ -51,9 +51,9 @@ func TestForProgram(t *testing.T) {
 	func a()(func(c bool)(bool)) {	
 		return func(a bool)(bool){return true}
 	}
-	func main(x field,y func(x bool)(bool))(func(c bool)(bool)) {	
+	func main(x bool,y func(x bool)(bool))(func(c bool)(bool)) {	
 		var b = a()
-		x = x*x*45 * 345
+		x = x*true
 		return b
 	}
 
