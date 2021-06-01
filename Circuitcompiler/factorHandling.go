@@ -178,42 +178,8 @@ func mulFactors(leftFactors, rightFactors factors) (result factors) {
 
 		for _, right := range rightFactors {
 
-			if left.Typ.Type == DecimalNumberToken && right.Typ.Type&IN != 0 {
-				leftFactors[i] = factor{Typ: right.Typ, multiplicative: utils.Field.ArithmeticField.Mul(right.multiplicative, left.multiplicative)}
-				//leftFactors[i] = &factor{Typ: right.Typ, multiplicative: utils.Field.ArithmeticField.MulNaive(right.multiplicative, left.multiplicative)}
-				continue
-			}
+			leftFactors[i] = factor{Typ: right.Typ, multiplicative: mulType(right.multiplicative, left.multiplicative, right.Typ.Type)}
 
-			if left.Typ.Type&IN != 0 && right.Typ.Type == DecimalNumberToken {
-				leftFactors[i] = factor{Typ: left.Typ, multiplicative: utils.Field.ArithmeticField.Mul(right.multiplicative, left.multiplicative)}
-				//leftFactors[i] = &factor{Typ: left.Typ, multiplicative: utils.Field.ArithmeticField.MulNaive(right.multiplicative, left.multiplicative)}
-				continue
-			}
-
-			if right.Typ.Type&left.Typ.Type == DecimalNumberToken {
-				res := utils.Field.ArithmeticField.Mul(right.multiplicative, left.multiplicative)
-				leftFactors[i] = factor{Typ: Token{Type: DecimalNumberToken, Identifier: res.String()}, multiplicative: res}
-				//res := utils.Field.ArithmeticField.MulNaive(right.multiplicative, left.multiplicative)
-				//leftFactors[i] = &factor{Typ: Token{Type: DecimalNumberToken, identifier: res.String()}, multiplicative: res}
-				continue
-
-			}
-			//tricky part here
-			//this one should only be reached, after a true multiplicationGate had its left and right braches computed. here we
-			//a factor can appear at most in quadratic form. we reduce terms a*a^-1 here.
-			//if right.Typ.Type&left.Typ.Type&IN != 0 {
-			//	if left.Typ.identifier == right.Typ.identifier {
-			//		if right.invert != left.invert {
-			//			leftFactors[i] = &factor{Typ: Token{Type: DecimalNumberToken}, multiplicative: utils.Field.ArithmeticField.MulNaive(right.multiplicative, left.multiplicative)}
-			//			continue
-			//		}
-			//	}
-			//
-			//	//rightFactors[i] = factor{Typ: CONST, negate: Xor(facRight.negate, facLeft.negate), multiplicative: mul2DVector(facRight.multiplicative, facLeft.multiplicative)}
-			//	//continue
-			//
-			//}
-			panic("unexpected. If this errror is thrown, its probably brcause a true multiplication Gate has been skipped and treated as on with constant multiplication or addition ")
 		}
 	}
 	return leftFactors

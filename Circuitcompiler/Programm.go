@@ -46,14 +46,6 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	}
 
 	switch currentConstraint.Output.Type {
-	case ARGUMENT:
-
-		return rets(Token{
-				Type:       ARGUMENT,
-				Identifier: currentConstraint.Output.Identifier,
-			}.toFactors(), nil),
-			false
-
 	case DecimalNumberToken:
 		f := factor{Typ: Token{Type: DecimalNumberToken, Identifier: currentConstraint.Output.Identifier}, multiplicative: currentConstraint.Output.value}
 		return rets(factors{f}, nil), false

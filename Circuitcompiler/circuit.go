@@ -92,6 +92,7 @@ func (this *function) hasEqualOutput(thenThese []*function) (answer bool, error 
 
 	collecteOutputs := []returnTypes{}
 	for _, v := range thenThese {
+		//todo we need to find a solution to the function without arguments problem..
 		out := v.outputs()
 		nrReturns += len(out)
 		collecteOutputs = append(collecteOutputs, out...)
@@ -291,6 +292,7 @@ func (w *watchstack) addPrimitiveReturn(tok Token) {
 
 func (from Token) primitiveReturnfunction() (gives *function) {
 	rmp := NewCircuit(from.Identifier, nil)
+	//here do smthn..
 	rmp.OutputTypes = []returnTypes{{
 		functionReturn: false,
 		typ:            from,

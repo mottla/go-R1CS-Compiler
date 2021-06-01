@@ -51,14 +51,14 @@ func TestForProgram(t *testing.T) {
 	func a()(func(c bool)(bool)) {	
 		return func(a bool)(bool){return true}
 	}
-	func main(x bool,y func(x bool)(bool))(func(c bool)(bool)) {	
+	func main(x bool,y func(x bool)(bool))(func(a field)(bool)) {	
 		var b = a()
-		x = x*true
-		return b
+		x = x*x
+		x = x*x
+		return func(a field)(bool) { return x*x }
 	}
 
 `
-
 	program := Parse(code)
 	container := program.Execute()
 
@@ -67,9 +67,9 @@ func TestForProgram(t *testing.T) {
 	r1cs := program.GatesToR1CS(gates)
 	fmt.Printf("number of gates %v, witness length %v \n ", r1cs.NumberOfGates, r1cs.WitnessLength)
 	//
-	//fmt.Println(r1cs.L)
-	//fmt.Println(r1cs.R)
-	//fmt.Println(r1cs.O)
+	fmt.Println(r1cs.L)
+	fmt.Println(r1cs.R)
+	fmt.Println(r1cs.O)
 	inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, []*big.Int{big.NewInt(int64(27)), big.NewInt(int64(3))})
 
 	fmt.Println("input")

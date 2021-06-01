@@ -896,23 +896,35 @@ func readTokenTillType(in []Token) (cutLeft, cutRight []Token) {
 
 //splitAtFirstHighestTokenType takes takes a string S and a token array and splits st:
 func splitAtFirstHighestStringType(in []Token, splitAt string) (cutLeft []Token, cutRight []Token) {
-	depth := 0
-
+	ctr1 := 0
+	ctr2 := 0
+	ctr3 := 0
 	for i := 0; i < len(in); i++ {
-		if in[i].Identifier == "(" || in[i].Identifier == "[" {
-			depth++
-		}
 
-		if in[i].Identifier == ")" || in[i].Identifier == "]" {
-			depth--
-		}
-
-		if in[i].Identifier == splitAt && depth == 0 {
+		if (in[i].Identifier == splitAt) && ctr1|ctr2|ctr3 == 0 {
 			if i == len(in)-1 {
 				return in[:i], cutRight
 			}
 			return in[:i], in[i+1:]
 		}
+
+		switch in[i].Identifier {
+		case "(":
+			ctr1++
+		case "{":
+			ctr3++
+		case "[":
+			ctr2++
+		case ")":
+			ctr1--
+		case "}":
+			ctr3--
+		case "]":
+			ctr2--
+		default:
+
+		}
+
 	}
 	return in, nil
 }
@@ -921,28 +933,34 @@ func splitAtFirstHighestStringType(in []Token, splitAt string) (cutLeft []Token,
 func splitAtFirstHighestTokenType(in []Token, splitAt TokenType) (cutLeft []Token, tok Token, cutRight []Token) {
 	ctr1 := 0
 	ctr2 := 0
+	ctr3 := 0
 	for i := 0; i < len(in); i++ {
-		if in[i].Identifier == "(" {
-			ctr1++
-		}
-		if in[i].Identifier == "[" {
-			ctr2++
-		}
-		if in[i].Identifier == ")" {
-			ctr1--
-		}
-		if in[i].Identifier == "]" {
-			ctr2--
-		}
-
-		if (in[i].Type&splitAt) != 0 && ctr1 == 0 && ctr2 == 0 {
+		if (in[i].Type&splitAt) != 0 && ctr1|ctr2|ctr3 == 0 {
 			if i == len(in)-1 {
 				return in[:i], in[i], cutRight
 			}
 			return in[:i], in[i], in[i+1:]
 		}
+
+		switch in[i].Identifier {
+		case "(":
+			ctr1++
+		case "{":
+			ctr3++
+		case "[":
+			ctr2++
+		case ")":
+			ctr1--
+		case "}":
+			ctr3--
+		case "]":
+			ctr2--
+		default:
+
+		}
+
 	}
-	return nil, Token{}, nil
+	return in, Token{}, nil
 }
 
 func stripOfBrackets(in []Token) []Token {
