@@ -443,3 +443,72 @@ func checkRangeValidity(in *big.Int, tokenType TokenType) bool {
 	}
 	return true
 }
+func addType(l, r *big.Int, tokenType TokenType) *big.Int {
+	checkRangeValidity(l, tokenType)
+	checkRangeValidity(r, tokenType)
+	switch tokenType {
+	case BOOL:
+		return new(big.Int).Xor(l, r)
+	case U8:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint8(ll) + uint8(rr)))
+
+	case U16:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint16(ll) + uint16(rr)))
+
+	case U32:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint32(ll) + uint32(rr)))
+
+	case U64: //cannot be reached. since uint64 conversion would fail anyway
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(ll + rr)
+
+	case FIELD:
+		return utils.Field.ArithmeticField.Add(l, r)
+
+	case DecimalNumberToken:
+
+		return utils.Field.ArithmeticField.Add(l, r)
+	}
+	panic("")
+}
+
+func mulType(l, r *big.Int, tokenType TokenType) *big.Int {
+	checkRangeValidity(l, tokenType)
+	checkRangeValidity(r, tokenType)
+	switch tokenType {
+	case BOOL:
+		return utils.Field.ArithmeticField.Mul(l, r)
+	case U8:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint8(ll) * uint8(rr)))
+
+	case U16:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint16(ll) * uint16(rr)))
+
+	case U32:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint32(ll) * uint32(rr)))
+
+	case U64: //cannot be reached. since uint64 conversion would fail anyway
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(ll * rr)
+
+	case FIELD:
+		return utils.Field.ArithmeticField.Mul(l, r)
+	case DecimalNumberToken:
+		return utils.Field.ArithmeticField.Mul(l, r)
+	}
+	panic("")
+}
