@@ -3,20 +3,19 @@ package Circuitcompiler
 import (
 	"fmt"
 	"math/big"
-	"strconv"
+	"strings"
 )
 
 var variableIndicationSign = "@"
 
 // function is the data structure of the compiled circuit
 type function struct {
-	Name     string
-	isNumber bool
-	value    *big.Int
+	Name string
 
-	Inputs []string //the inputs of a circuit are circuits. Tis way we can pass functions as arguments
-
-	Outputs []string
+	InputIdentifiers       []string //the inputs of a circuit are circuits. Tis way we can pass functions as arguments
+	SNARK_Public_Statement []string
+	InputTypes             []returnTypes
+	OutputTypes            []returnTypes
 
 	//parent function. this function inherits all functions wich are accessible from his anchestors. Recent overload Late
 	Context *function
@@ -26,289 +25,115 @@ type function struct {
 
 	//this will stay. the concept of a taskstack is relevant
 	taskStack *watchstack
-	//lets turn this into something we only need for the semantic check
-	constraintMap map[string]*Constraint
 }
 
-type watchstack struct {
-	data []*Constraint
+type returnTypes struct {
+	functionReturn bool
+	fkt            *function
+	typ            Token
 }
 
-func newCircuit(name string, context *function) *function {
-
-	c := &function{Context: context, Name: name, Inputs: []string{}, constraintMap: make(map[string]*Constraint), taskStack: newWatchstack(), functions: make(map[string]*function)}
-
-	return c
+func (r returnTypes) String() string {
+	return fmt.Sprintf("%v%v", r.fkt.description(), r.typ)
 }
 
-func RegisterFunctionFromConstraint(constraint *Constraint, context *function) (c *function) {
-
-	name := constraint.Output.Identifier
-	c = newCircuit(name, context)
-
-	for _, arg := range constraint.Inputs {
-		c.Inputs = append(c.Inputs, arg.Output.Identifier)
-
-		cl := arg.clone()
-		cl.Output.Type = FUNCTION_CALL
-		c.constraintMap[arg.Output.Identifier] = cl
-		//if i add them as functions, then they later can be replaced by functions.
-		rmp := newCircuit(arg.Output.Identifier, nil)
-		rmp.taskStack.add(&Constraint{
-			Output: Token{
-				Type:       RETURN,
-				Identifier: "",
-			},
-			Inputs: []*Constraint{arg},
-		})
-		if _, ex := c.functions[rmp.Name]; ex {
-			panic(fmt.Sprintf("argument: %v , is not unique ", rmp.Name))
-		}
-		c.functions[rmp.Name] = rmp
+func NewCircuit(name string, context *function) *function {
+	return &function{
+		Name:             name,
+		InputIdentifiers: []string{},
+		OutputTypes:      []returnTypes{},
+		InputTypes:       []returnTypes{},
+		Context:          context,
+		functions:        make(map[string]*function),
+		taskStack:        newWatchstack(),
 	}
 
-	return
 }
 
-func (currentCircuit *function) preCompile(constraintStack []*Constraint) {
-	if len(constraintStack) == 0 {
-		return
+func (this *function) description() string {
+	if this == nil {
+		return ""
 	}
-	currentConstraint := constraintStack[0]
-
-	switch currentConstraint.Output.Type {
-	case PUBLIC:
-		if currentCircuit.Name != "main" {
-			panic("public zkSNARK parameters need to be declared in main function")
-		}
-	case IF:
-		entireIfElse, outsideIfElse := splitAtIfEnd(constraintStack)
-
-		identifier := fmt.Sprintf("%vif", currentCircuit.taskStack.len())
-
-		newFunc := newCircuit(identifier, currentCircuit)
-
-		currentCircuit.functions[identifier] = newFunc
-
-		currentCircuit.taskStack.add(&Constraint{
-			Output: Token{
-				Type:       IF_FUNCTION_CALL,
-				Identifier: identifier,
-			},
-		})
-
-		firstIf, elseAndRest, succ2 := splitAtNestedEnd(entireIfElse)
-		if !succ2 {
-			panic("unexpected, should be detected at parsing")
-		}
-
-		identifier2 := fmt.Sprintf("%vif", newFunc.taskStack.len())
-		ifcircuit := newCircuit("if", currentCircuit)
-
-		newFunc.functions[identifier2] = ifcircuit
-
-		newFunc.taskStack.add(&Constraint{
-			Output: Token{
-				Type:       IF,
-				Identifier: identifier2,
-			},
-			Inputs: firstIf[0].Inputs,
-		})
-		currentCircuit.preCompile(outsideIfElse)
-		ifcircuit.preCompile(firstIf[1:])
-		newFunc.preCompile(elseAndRest)
-
-		return
-	case ELSE:
-
-		firstIf, elseAndRest, succ2 := splitAtNestedEnd(constraintStack)
-		if !succ2 {
-			panic("unexpected, should be detected at parsing")
-		}
-
-		identifier2 := fmt.Sprintf("%vif", currentCircuit.taskStack.len())
-
-		ifcircuit := newCircuit("else", currentCircuit)
-
-		currentCircuit.functions[identifier2] = ifcircuit
-
-		currentCircuit.taskStack.add(&Constraint{
-			Output: Token{
-				Type:       IF,
-				Identifier: identifier2,
-			},
-			Inputs: firstIf[0].Inputs,
-		})
-		currentCircuit.preCompile(elseAndRest)
-		ifcircuit.preCompile(firstIf[1:])
-
-		return
-	case IF_ELSE_CHAIN_END:
-		break
-	case ARRAY_DECLARE:
-		if _, ex := currentCircuit.constraintMap[currentConstraint.Output.Identifier]; ex {
-			panic(fmt.Sprintf("array %s already declared", currentConstraint.Output.Identifier))
-		}
-
-		currentCircuit.constraintMap[currentConstraint.Output.Identifier] = currentConstraint
-
-		for i := 0; i < len(currentConstraint.Inputs); i++ {
-			element := fmt.Sprintf("%s[%v]", currentConstraint.Output.Identifier, i)
-			constr := &Constraint{
-				Output: Token{
-					Type:       VARIABLE_DECLARE,
-					Identifier: element,
-				},
-				Inputs: []*Constraint{currentConstraint.Inputs[i]},
-			}
-			currentCircuit.preCompile([]*Constraint{constr})
-
-			//circ.taskUpdate(constr)
-		}
-	case VARIABLE_DECLARE:
-		if _, ex := currentCircuit.functions[currentConstraint.Output.Identifier]; ex {
-			panic(fmt.Sprintf("variable %s already declared", currentConstraint.Output.Identifier))
-		}
-		rmp := newCircuit(currentConstraint.Output.Identifier, currentCircuit)
-		rmp.taskStack.add(&Constraint{
-			Output: Token{
-				Type:       RETURN,
-				Identifier: "",
-			},
-			Inputs: currentConstraint.Inputs,
-		},
-		)
-		currentCircuit.functions[currentConstraint.Output.Identifier] = rmp
-		//is this still necessary..
-		currentCircuit.constraintMap[currentConstraint.Output.Identifier] = &Constraint{
-			Output: Token{
-				Type:       FUNCTION_CALL,
-				Identifier: currentConstraint.Output.Identifier,
-			},
-		}
-		//declarations exist only for static semantic check. from now on we treat it like overload
-		currentCircuit.taskStack.add(&Constraint{
-			Output: Token{
-				Type: VARIABLE_OVERLOAD,
-			},
-			Inputs: []*Constraint{{
-				Output: currentConstraint.Output,
-			},
-				currentConstraint.Inputs[0],
-			},
-		})
-	case FUNCTION_DEFINE:
-		insideFunc, outsideFunc, succ := splitAtNestedEnd(constraintStack)
-		if !succ {
-			panic("unexpected, should be detected at parsing")
-		}
-		if _, ex := currentCircuit.functions[currentConstraint.Output.Identifier]; ex {
-			panic(fmt.Sprintf("function %s already declared", currentConstraint.Output.Identifier))
-		}
-		if _, ex := currentCircuit.constraintMap[currentConstraint.Output.Identifier]; ex {
-			panic(fmt.Sprintf("function %s overloads variable with same name", currentConstraint.Output.Identifier))
-		}
-		newFunc := RegisterFunctionFromConstraint(currentConstraint, currentCircuit)
-		currentCircuit.functions[currentConstraint.Output.Identifier] = newFunc
-		//currentCircuit.constraintMap[currentConstraint.Output.identifier] = &Constraint{
-		//	Output: Token{
-		//		Type:       FUNCTION_CALL, //if someone accesses the function, he does not necessarily want to call it
-		//		identifier: currentConstraint.Output.identifier,
-		//	},
-		//	//Inputs: currentConstraint.Inputs,
-		//}
-		currentCircuit.preCompile(outsideFunc)
-		newFunc.preCompile(insideFunc[1:])
-		return
-	case FOR:
-		//gather stuff, then evaluate
-		insideFor, outsideFor, succ := splitAtNestedEnd(constraintStack)
-		if !succ {
-			panic("unexpected, should be detected at parsing")
-		}
-
-		identifier2 := fmt.Sprintf("%vfor", currentCircuit.taskStack.len())
-
-		forCircuit := newCircuit("for", currentCircuit)
-
-		currentCircuit.functions[identifier2] = forCircuit
-
-		currentCircuit.taskStack.add(&Constraint{
-			Output: Token{
-				Type:       FOR,
-				Identifier: identifier2,
-			},
-			Inputs: currentConstraint.Inputs,
-		})
-		currentCircuit.preCompile(outsideFor)
-		forCircuit.preCompile(insideFor[1:])
-		return
-	case NESTED_STATEMENT_END:
-		//skippp over
-		break
-	case VARIABLE_OVERLOAD:
-		//TODO Is overloading a task?
-		currentCircuit.taskStack.add(currentConstraint)
-
-	case FUNCTION_CALL:
-		//since function does not need to be defined, we do nothing
-		currentCircuit.taskStack.add(currentConstraint)
-	case RETURN:
-		currentCircuit.taskStack.add(currentConstraint)
-	default:
-
+	res := "("
+	for _, v := range this.InputTypes {
+		res += v.String()
+		res += ","
 	}
-	currentCircuit.contextCheckInputs(currentConstraint)
-	currentCircuit.preCompile(constraintStack[1:])
+	res += ")->("
+	for _, v := range this.OutputTypes {
+		res += v.String()
+		res += ","
+	}
+	res += ")"
+	return res
 }
 
-func (circ *function) contextCheckInputs(constraint *Constraint) {
-	for i := 0; i < len(constraint.Inputs); i++ {
-		circ.contextCheck(constraint.Inputs[i])
+func (a returnTypes) compare(in returnTypes) (bool, string) {
+	l := a.String()
+	r := in.String()
+	if strings.EqualFold(l, r) {
+		return true, ""
 	}
+
+	return false, fmt.Sprintf("expected %v, got %v", l, r)
 }
-func (circ *function) contextCheck(constraint *Constraint) {
+func (v *function) outputs() []returnTypes {
+	//the function has not been fully loaded. it therefor returns itself
+	if len(v.InputIdentifiers) != 0 {
+		return []returnTypes{{
+			functionReturn: true,
+			fkt:            v}}
+	}
+	return v.OutputTypes
+}
 
-	for i := 0; i < len(constraint.Inputs); i++ {
-		circ.contextCheck(constraint.Inputs[i])
+func (f *function) checkIfReturnsMatchHeader(thenThese []*function) (answer bool, error string) {
+	nrReturns := 0
+
+	collecteOutputs := []returnTypes{}
+	for _, v := range thenThese {
+		//todo we need to find a solution to the function without arguments problem..
+		out := v.outputs()
+		nrReturns += len(out)
+		collecteOutputs = append(collecteOutputs, out...)
 	}
 
-	if constraint.Output.Type&(DecimalNumberToken|Operator) != 0 {
-		return
+	if len(f.OutputTypes) != nrReturns {
+		return false, fmt.Sprintf("expected %v return values, got %v", len(f.OutputTypes), len(thenThese))
 	}
 
-	switch constraint.Output.Type {
-	case ARGUMENT:
-		if _, ex := circ.constraintMap[constraint.Output.Identifier]; !ex {
-			panic(fmt.Sprintf("variable %s not found", constraint.Output.Identifier))
+	for i, v := range f.OutputTypes {
+		if b, err := v.compare(collecteOutputs[i]); !b {
+			return false, err
 		}
-	case VARIABLE_OVERLOAD:
-		panic("unexpected reach")
-	case FUNCTION_CALL:
-		//if _, ex := circ.findFunctionInBloodline(constraint.Output.identifier); !ex {
-		//	panic(fmt.Sprintf("function %s used but not declared", constraint.Output.identifier))
-		//}
-	case VARIABLE_DECLARE:
-		panic("unexpected reach")
-	case ARRAY_DECLARE:
-		panic("unexpected reach")
-	case IDENTIFIER_VARIABLE:
-		if _, ex := circ.findConstraintInBloodline(constraint.Output.Identifier); !ex {
-			if _, ex := circ.findFunctionInBloodline(constraint.Output.Identifier); !ex {
-				panic(fmt.Sprintf("variable %s used but not declared", constraint.Output.Identifier))
-			}
-		}
-	case ARRAY_CALL:
-		//we handy arra acces completely during execution now. some precompilation checks could be implemented however
-		//TODO rethink
-		//if _, ex := circ.findConstraintInBloodline(constraint.Output.identifier); !ex {
-		//	panic(fmt.Sprintf("array %s not declared", constraint.Output.identifier))
-		//}
-	default:
-
 	}
 
-	return
+	return true, ""
+}
+
+func (this *function) hasEqualDescription2(thenThat returnTypes) (answer bool, error string) {
+	l := this.description()
+	r := ""
+	if !thenThat.functionReturn {
+		r = thenThat.typ.primitiveReturnfunction().description()
+	} else {
+		r = thenThat.fkt.description()
+	}
+
+	if strings.EqualFold(l, r) {
+		return true, ""
+	}
+
+	return false, fmt.Sprintf("%v expects %v, got %v", this.Name, l, r)
+}
+func (this *function) hasEqualDescription(thenThat *function) (answer bool, error string) {
+	l := this.description()
+	r := thenThat.description()
+	if strings.EqualFold(l, r) {
+		return true, ""
+	}
+
+	return false, fmt.Sprintf("%v expects %v, got %v", this.Name, l, r)
 }
 
 func (currentCircuit *function) findFunctionInBloodline(identifier string) (*function, bool) {
@@ -322,28 +147,6 @@ func (currentCircuit *function) findFunctionInBloodline(identifier string) (*fun
 
 }
 
-//TODO maybe I add context to every constraint as its done with the functions. in the ende everything is a function anyways
-func (currentCircuit *function) findConstraintInBloodline(identifier string) (*Constraint, bool) {
-	if currentCircuit == nil {
-		return nil, false
-	}
-	if con, ex := currentCircuit.constraintMap[identifier]; ex {
-		return con, true
-	}
-	return currentCircuit.Context.findConstraintInBloodline(identifier)
-
-}
-
-func (currentCircuit *function) getCircuitContainingConstraintInBloodline(identifier string) (*function, bool) {
-	if currentCircuit == nil {
-		return nil, false
-	}
-	if _, ex := currentCircuit.constraintMap[identifier]; ex {
-		return currentCircuit, true
-	}
-	return currentCircuit.Context.getCircuitContainingConstraintInBloodline(identifier)
-
-}
 func (currentCircuit *function) getCircuitContainingFunctionInBloodline(identifier string) (*function, bool) {
 	if currentCircuit == nil {
 		return nil, false
@@ -357,60 +160,51 @@ func (currentCircuit *function) getCircuitContainingFunctionInBloodline(identifi
 
 func (circ *function) flatCopy() (clone *function) {
 	if circ == nil {
-		panic("")
+		return nil
 	}
-	clone = newCircuit(circ.Name, circ.Context)
-	inputs := make([]string, len(circ.Inputs))
-	copy(inputs, circ.Inputs)
-	clone.Inputs = inputs
-	//clone.functions = circ.functions
-	//clone.constraintMap = circ.constraintMap
+	clone = NewCircuit(circ.Name, circ.Context)
+	argumentIdentifiers := make([]string, len(circ.InputIdentifiers))
+
+	copy(argumentIdentifiers, circ.InputIdentifiers)
+	clone.InputIdentifiers = argumentIdentifiers
+
+	outputs := make([]returnTypes, len(circ.OutputTypes))
+	clone.OutputTypes = outputs
+
+	for k, v := range circ.OutputTypes {
+		outputs[k] = v
+
+	}
+	inputs := make([]returnTypes, len(circ.InputTypes))
+	clone.InputTypes = inputs
+
+	for k, v := range circ.InputTypes {
+		inputs[k] = v
+	}
 	for k, v := range circ.functions {
-		f := v.flatCopy()
-		f.Context = clone
-		clone.functions[k] = f
+		clone.functions[k] = v
 	}
-	for k, v := range circ.constraintMap {
-		clone.constraintMap[k] = v.clone()
-	}
-	clone.taskStack = circ.taskStack.clone()
+
+	clone.taskStack = circ.taskStack
 	return
 }
 
-func (circ *function) snapshot() (keys []string) {
-	for k, _ := range circ.constraintMap {
-		keys = append(keys, k)
-	}
-	return keys
-}
-func (circ *function) restore(keys []string) {
-	tmp := make(map[string]*Constraint)
-	for _, k := range keys {
-		tmp[k] = circ.constraintMap[k]
-	}
-	circ.constraintMap = tmp
-}
-
 func (currentCircuit *function) checkStaticCondition(c *Constraint) (isStatic, isSatisfied bool) {
-	//else condition
-	if len(c.Inputs) == 0 {
-		return true, true
-	}
 
-	var factorsA, factorsB factors
+	var factorsA, factorsB bundle
 	var A, B *big.Int
 
-	factorsA, _, _ = currentCircuit.compile(c.Inputs[1], newGateContainer())
-	if !factorsA.isSingleNumber() {
+	factorsA, _ = currentCircuit.compile(c.Inputs[1], newGateContainer())
+	if factorsA.fac().containsArgument() {
 		return false, false
 
 	}
-	factorsB, _, _ = currentCircuit.compile(c.Inputs[2], newGateContainer())
-	if !factorsB.isSingleNumber() {
+	factorsB, _ = currentCircuit.compile(c.Inputs[2], newGateContainer())
+	if factorsB.fac().containsArgument() {
 		return false, false
 	}
-	A = factorsA[0].multiplicative
-	B = factorsB[0].multiplicative
+	A = factorsA.fac()[0].multiplicative
+	B = factorsB.fac()[0].multiplicative
 
 	switch c.Inputs[0].Output.Identifier {
 	case "==":
@@ -444,10 +238,14 @@ func (currentCircuit *function) checkStaticCondition(c *Constraint) (isStatic, i
 		}
 		break
 	default:
-		panic(c.Inputs[0].Output.String())
+		panic(fmt.Sprintf("unknown operation %v", c.Inputs[0].Output.Identifier))
 
 	}
 	return true, true
+}
+
+type watchstack struct {
+	data []*Constraint
 }
 
 func newWatchstack() *watchstack {
@@ -487,6 +285,13 @@ func (w *watchstack) PopFirst() (bool, *Constraint) {
 	w.data = w.data[1:]
 	return true, f
 }
+func (w *watchstack) PeekLast() (bool, *Constraint) {
+	if len(w.data) == 0 {
+		return false, nil
+	}
+	return true, w.data[len(w.data)-1]
+}
+
 func (w *watchstack) addPrimitiveReturn(tok Token) {
 	w.add(&Constraint{
 		Output: Token{
@@ -501,103 +306,104 @@ func (w *watchstack) addPrimitiveReturn(tok Token) {
 }
 
 func (from Token) primitiveReturnfunction() (gives *function) {
-	rmp := newCircuit(from.Identifier, nil)
+	rmp := NewCircuit(from.Identifier, nil)
+	//here do smthn..
+	rmp.OutputTypes = []returnTypes{{
+		functionReturn: false,
+		typ:            from,
+	}}
 	rmp.taskStack.addPrimitiveReturn(from)
 	return rmp
 }
 
-func splitAtIfEnd(cs []*Constraint) (inside, outside []*Constraint) {
-
-	for i, v := range cs {
-		if v.Output.Type == IF_ELSE_CHAIN_END {
-			return cs[:i], cs[i:]
-		}
-	}
-	panic("unexpected reach")
-	return inside, outside
-}
-
-func splitAtNestedEnd(cs []*Constraint) (insideNested, outsideNested []*Constraint, success bool) {
-
-	ctr := 0
-
-	for i, c := range cs {
-		if c.Output.Type == ELSE || c.Output.Type == FOR || c.Output.Type == FUNCTION_DEFINE || c.Output.Type == IF {
-			ctr++
-		}
-		if c.Output.Type == NESTED_STATEMENT_END {
-			ctr--
-		}
-		if ctr == 0 {
-			if i == len(cs)-1 {
-				return cs[0:i], outsideNested, true
-			}
-			return cs[0:i], cs[i+1:], true
-		}
-	}
-	return
-}
-
 func (currentCircuit *function) getFunctionInputs() (oldInputs []*function) {
-	for _, name := range currentCircuit.Inputs {
+	for _, name := range currentCircuit.InputIdentifiers {
 		oldInputs = append(oldInputs, currentCircuit.functions[name])
 	}
 	return
 
 }
-func (currentCircuit *function) setFunctionInputs(inputs []string, fktInputs []*function) {
-	currentCircuit.Inputs = inputs
-	for i, name := range inputs {
-		currentCircuit.functions[name] = fktInputs[i]
-	}
-	return
 
-}
+func (currentCircuit *function) getsLoadedWith(newInputs []*function) {
 
-func (currentCircuit *function) getsLoadedWith(newInputs []*function) (allArgumentsLoaded bool) {
-	allArgumentsLoaded = len(currentCircuit.Inputs) == len(newInputs)
-	if len(currentCircuit.Inputs) < len(newInputs) {
-		panic(fmt.Sprintf("%v takes %v arguments, got %v", currentCircuit.Name, len(currentCircuit.Inputs), len(newInputs)))
+	if len(currentCircuit.InputTypes) < len(newInputs) {
+		panic(fmt.Sprintf("%v takes %v arguments, got %v", currentCircuit.Name, len(currentCircuit.InputIdentifiers), len(newInputs)))
 	}
 	for i := 0; i < len(newInputs); i++ {
-		currentCircuit.functions[currentCircuit.Inputs[i]] = newInputs[i]
+		out := newInputs[i].outputs()
+		if len(out) != 1 {
+			//a()-> x,y
+			//so we dont allos foo( a()), even when foo takes two arguments. should we stay with go syntax?
+			panic("")
+		}
+		b, err := currentCircuit.InputTypes[i].compare(out[0])
+		if b {
+			//do we need this map assignment?
+			currentCircuit.functions[currentCircuit.InputIdentifiers[0]] = newInputs[0]
+			currentCircuit.InputTypes = currentCircuit.InputTypes[1:]
+			currentCircuit.InputIdentifiers = currentCircuit.InputIdentifiers[1:]
+
+			continue
+		}
+
+		panic(err)
+
 	}
-	currentCircuit.Inputs = currentCircuit.Inputs[len(newInputs):]
+
 	return
 }
 
-//helper function
-func (currentCircuit *function) resolveArrayName(id string, inputs []*Constraint) string {
+//pani
+func (currentCircuit *function) resolveArrayName(id string, inputs []*Constraint) (composedName string) {
 
 	var arrayIdentifier = id
-	//if len(c.Inputs) < 1 {
+	//if len(c.InputIdentifiers) < 1 {
 	//	panic("accessing array index failed")
 	//}
 	for _, in := range inputs {
-		indexFactors, _, _ := currentCircuit.compile(in, newGateContainer())
-		if !indexFactors.isSingleNumber() {
+		indexFactors, _ := currentCircuit.compile(in, newGateContainer())
+		if indexFactors.fac().containsArgument() {
 			panic("cannot access array dynamically in an arithmetic circuit currently")
 		}
 		if len(indexFactors) > 1 {
 			panic("unexpected")
 		}
-		tmp, err := strconv.ParseInt(indexFactors[0].Typ.Identifier, 10, 64)
-		if err != nil || tmp < 0 {
-			panic(err.Error())
-		}
+		tmp := indexFactors.fac()[0].multiplicative
 		arrayIdentifier += fmt.Sprintf("[%v]", tmp)
 	}
 	return arrayIdentifier
 }
 
-func (currentCircuit *function) execute(gateCollector *gateContainer) (facs factors, returned bool, preloadedFunction function) {
+func (currentCircuit *function) execute(gateCollector *gateContainer) (bundle, bool) {
+	if len(currentCircuit.InputTypes) != 0 {
+		return bundle{returnTyped{
+			facs:              nil,
+			preloadedFunction: currentCircuit,
+		}}, false
+	}
 
 	for _, task := range currentCircuit.taskStack.data {
-		f, returs, fkt := currentCircuit.compile(task, gateCollector)
-		if returs {
-			return f, true, fkt
+		bundl, rett := currentCircuit.compile(task, gateCollector)
+		if rett {
+			return bundl, rett
 		}
 		//gateCollector.completeFunction(f)
 	}
-	return nil, false, function{}
+	return emptyRets()
+}
+
+func (from *Constraint) primitiveReturnfunction(typ Token) (gives *function) {
+	rmp := NewCircuit(from.Output.Identifier, nil)
+	rmp.taskStack.add(&Constraint{
+		Output: Token{
+			Type:       RETURN,
+			Identifier: "",
+		},
+		Inputs: []*Constraint{from}})
+	rmp.OutputTypes = []returnTypes{{
+		functionReturn: false,
+		fkt:            nil,
+		typ:            typ,
+	}}
+	return rmp
 }

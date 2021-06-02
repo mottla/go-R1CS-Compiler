@@ -211,7 +211,7 @@ func (e *G2) CurvePoints() (*gfP2, *gfP2, *gfP2, *gfP2) {
 func (e *G2) Copy() (copy *G2) {
 	co := new(G2)
 	x, y, z, t := e.CurvePoints()
-	co.p.x, co.p.y, co.p.z, co.p.t = x.copy(), y.copy(), (z.copy()), (t.copy())
+	co.p.x, co.p.y, co.p.z, co.p.t = x.copy(), y.copy(), z.copy(), t.copy()
 	return co
 }
 

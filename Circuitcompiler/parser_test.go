@@ -11,31 +11,82 @@ func TestBuild(t *testing.T) {
 	fmt.Println(c)
 }
 
-func Test_Parser(t *testing.T) {
+func TestParser_PrepareFunctionHeader(t *testing.T) {
+	code := `
+func test(a field, b func(a field))(field,field) {
 
-	//code := `def main(a){
-	//		var d =  asdf(a(x ),b,   c,d*8798,  32 )			* 3
-	//		return  d
-	//	}
+}
+`
+	parser := NewParser(code, false)
+	toks := parser.stackAllTokens()
+	functionInput, rest := splitAtFirstHighestStringType(toks[3:], "{")
+	fmt.Println(rest)
+	fk := NewCircuit("", nil)
+	parser.PrepareFunctionSignature(fk, functionInput)
+	fmt.Println(fk)
+}
+
+func TestArray(t *testing.T) {
+	code := `a[4][3]`
+	parser := NewParser(code, false)
+	toks := parser.stackAllTokens()
+	toks = toks[:len(toks)-1]
+	ct := Constraint{}
+	parser.parseExpression(toks, NewCircuit("", &function{}), &Constraint{})
+	fmt.Println(ct)
+}
+func TestNewParse(t *testing.T) {
+	code := `
+	func main(x bool[4][5],y bool)(field) {
+		bool[4][3] in = [[4,1,1],[1,1,1],[1,1,1],[1,1,1]]
+		return x[1][1]*in[0][0] 
+	}
+`
+	p := Parse(code)
+	container := p.Execute()
+
+	gates := container.OrderedGates()
+	fmt.Println("\n generating R1CS")
+	r1cs := p.GatesToR1CS(gates)
+	fmt.Printf("number of gates %v, witness length %v \n ", r1cs.NumberOfGates, r1cs.WitnessLength)
 	//
-	//	def foo(o,k){
-	//		for(a = 3; a<2; a+=1){
-	//			var d =  (c * (1+b) * k)
-	//			return  d
-	//			}
-	//		if a<b{
-	//				return foo()
-	//			}
-	//		return d * i
-	//	}
-	//`
-	code := `def main(a){	
-			return  d[1*435]*3
-		}
-	`
-	fmt.Println(code)
+	fmt.Println(r1cs.L)
+	fmt.Println(r1cs.R)
+	fmt.Println(r1cs.O)
+}
 
-	Parse(code, false)
+func TestNewParse2(t *testing.T) {
+	code := `
+	func mul(x bool,y bool)(bool){
+		return x*y
+	}
+
+	func mul2(x bool,y bool)(bool,bool){
+		return x*x,y*y
+	}
+	
+	func mul3(x bool,y func(x bool,y bool)(bool) )(field){
+		return y(x,x)
+	}
+
+	func main(x bool,y field)(field) {
+		#func m5(x bool)(bool){return mul(5,x)}
+		x,x = mul2(x,x)	
+		return mul3(x,mul)
+	}
+
+`
+	p := Parse(code)
+	container := p.Execute()
+
+	gates := container.OrderedGates()
+	fmt.Println("\n generating R1CS")
+	r1cs := p.GatesToR1CS(gates)
+	fmt.Printf("number of gates %v, witness length %v \n ", r1cs.NumberOfGates, r1cs.WitnessLength)
+	//
+	fmt.Println(r1cs.L)
+	fmt.Println(r1cs.R)
+	fmt.Println(r1cs.O)
 }
 
 //only to see the difference between the split funcitons

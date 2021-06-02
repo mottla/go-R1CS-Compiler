@@ -125,7 +125,7 @@ func (p *FFT_PrecomputedParas) _dfft(bigAlphas_SS, bigAlphas, data []*big.Int, i
 	}
 	even := []*big.Int{}
 	odd := []*big.Int{}
-	for k, _ := range data {
+	for k := range data {
 		if k%2 == 1 {
 			odd = append(odd, data[k])
 		} else {

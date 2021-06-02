@@ -1,11 +1,9 @@
 package Circuitcompiler
 
-// This package provides a Lexer that globalFunction similarly to Rob Pike's discussion
-// about lexer design in this [talk](https://www.youtube.com/watch?v=HxaD_trXwRE).
-
 import (
 	"errors"
 	"fmt"
+	"github.com/mottla/go-R1CS-Compiler/utils"
 	"math/big"
 	"strings"
 	"unicode/utf8"
@@ -26,10 +24,21 @@ type Tokens struct {
 type Token struct {
 	Type       TokenType
 	Identifier string
+	value      *big.Int
+	isArray    bool
+	isArgument bool
+	dimensions []int64
+	readInLine int
 }
 
 func (ch Token) String() string {
-	return fmt.Sprintf("(%v <> %v)", ch.Identifier, ch.Type)
+	if ch.Type == 0 {
+		return ""
+	}
+	if ch.isArray {
+		fmt.Sprintf("%v[%v]", ch.Type, ch.dimensions)
+	}
+	return fmt.Sprintf("%v", ch.Type)
 }
 
 func (t *Tokens) next() (r Token) {
@@ -40,11 +49,12 @@ func (t *Tokens) next() (r Token) {
 	t.toks = t.toks[1:]
 	return r
 }
-func (t Token) toFactors() factors {
-	return factors{factor{
+func (t Token) toFactors() (r factors) {
+	r = []factor{{
 		Typ:            t,
 		multiplicative: bigOne,
 	}}
+	return
 }
 func (t Token) toFactor() factor {
 	return factor{
@@ -64,14 +74,20 @@ var arithmeticOperator = []string{"-", "+", "*", "/", "**"}
 var booleanOperator = []string{"||", "&&"}
 var bitOperator = []string{">>", "<<", "<<<", ">>>", "|", "^", "&"}
 var binaryComperator = []string{"==", "!=", ">", ">=", "<", "<="}
+var predeclaredFunctions = []string{"SPLIT", "equal ", "BREAK", "ADD"}
 
 //var unaryOperator = []string{"++", "--"}
 
 var operationMap = make(map[string]TokenType)
+var predeclaredFunctionsMap = make(map[string]bool)
 var keyWordMap map[string]TokenType
+var handle = make(map[string]func(...*function))
 
 func init() {
 
+	for _, v := range predeclaredFunctions {
+		predeclaredFunctionsMap[v] = true
+	}
 	for _, v := range assignmentOperator {
 		operationMap[v] = AssignmentOperatorToken
 	}
@@ -99,15 +115,25 @@ func init() {
 		"func":   FUNCTION_DEFINE,
 		"import": IMPORT,
 		"public": PUBLIC,
+		"field":  FIELD,
+		"bool":   BOOL,
+		"u8":     U8,
+		"u16":    U16,
+		"u32":    U32,
+		"u64":    U64,
+		"true":   True,
+		"false":  False,
 	}
 
 }
 
 var Operator = BinaryComperatorToken | ArithmeticOperatorToken | BooleanOperatorToken | BitOperatorToken | AssignmentOperatorToken
 var IN = IDENTIFIER_VARIABLE | ARGUMENT | VARIABLE_DECLARE | UNASIGNEDVAR
+var Types = BOOL | U8 | U16 | U32 | U64 | FIELD
 
 const (
 	DecimalNumberToken TokenType = 1 << iota
+	HexNumberToken
 	SyntaxToken
 	CommentToken
 	AssignmentOperatorToken
@@ -132,9 +158,15 @@ const (
 	IF
 	ELSE
 	FOR
-	NESTED_STATEMENT_END
-	IF_ELSE_CHAIN_END
 	RETURN
+	FIELD
+	BOOL
+	U8
+	U16
+	U32
+	U64
+	True
+	False
 )
 
 func (ch TokenType) String() string {
@@ -158,8 +190,6 @@ func (ch TokenType) String() string {
 		return "BinaryComperatorToken"
 	case IMPORT:
 		return "import"
-	case NESTED_STATEMENT_END:
-		return "For ends"
 	case SyntaxToken:
 		return "syntaxToken"
 	case DecimalNumberToken:
@@ -190,6 +220,18 @@ func (ch TokenType) String() string {
 		return "arrayDefine"
 	case PUBLIC:
 		return "public"
+	case FIELD:
+		return "field type"
+	case BOOL:
+		return "boolean type"
+	case U8:
+		return "8 bit type"
+	case U16:
+		return "16 bit type"
+	case U32:
+		return "32 bit type"
+	case U64:
+		return "64 bit type"
 
 	default:
 		panic("unknown TOken")
@@ -249,11 +291,39 @@ func (l *Lexer) Current() string {
 // Emit will receive a token type and push a new token with the current analyzed
 // value into the tokens channel.
 func (l *Lexer) Emit(t TokenType) {
-	tok := Token{
-		Type:       t,
-		Identifier: l.Current(),
+	var tok Token
+	if t == DecimalNumberToken {
+		value, success := utils.Field.ArithmeticField.StringToFieldElement(l.Current())
+		if !success {
+			panic("not possible")
+		}
+		tok = Token{
+			Type:       DecimalNumberToken,
+			readInLine: l.currentLine,
+			value:      value,
+		}
+	} else if t == HexNumberToken {
+		value, success := new(big.Int).SetString(l.Current()[2:], 16)
+		if !success {
+			panic("not possible")
+		}
+		tok = Token{
+			Type:       DecimalNumberToken,
+			readInLine: l.currentLine,
+			value:      value,
+		}
+	} else {
+		tok = Token{
+			Type:       t,
+			Identifier: l.Current(),
+			readInLine: l.currentLine,
+		}
 	}
+
 	l.tokens <- tok
+	if tok.Identifier == "\n" {
+		l.currentLine = l.currentLine + 1
+	}
 	l.start = l.position
 	l.rewind.clear()
 }
@@ -296,9 +366,7 @@ func (l *Lexer) Rewind() {
 			l.position = l.start
 		}
 	}
-	if r == '\n' {
-		l.currentLine--
-	}
+
 }
 
 // Next pulls the next rune from the Lexer and returns it, moving the position
@@ -316,9 +384,7 @@ func (l *Lexer) Next() rune {
 	}
 	l.position += s
 	l.rewind.push(r)
-	if r == '\n' {
-		l.currentLine++
-	}
+
 	return r
 }
 
@@ -381,7 +447,7 @@ func isLetter(ch rune) bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
 }
 func isDecimalDigit(ch rune) bool {
-	return (ch >= '0' && ch <= '9')
+	return ch >= '0' && ch <= '9'
 }
 func isOperator(ch rune) bool {
 	return strings.ContainsRune(operationTokens, ch)
@@ -394,19 +460,7 @@ func DecimalNumberState(l *Lexer) StateFunc {
 }
 func HexNumberState(l *Lexer) StateFunc {
 	l.Take(hexTokens)
-	c := l.Current()
-	v, b := new(big.Int).SetString(c[2:], 16)
-	if !b {
-		panic("not possible")
-	}
-	tok := Token{
-		Type:       DecimalNumberToken,
-		Identifier: v.String(),
-	}
-	l.tokens <- tok
-	l.start = l.position
-	l.rewind.clear()
-
+	l.Emit(HexNumberToken)
 	return ProbablyWhitespaceState(l)
 }
 
@@ -445,6 +499,7 @@ func IdentState(l *Lexer) StateFunc {
 		return ProbablyWhitespaceState
 	}
 
+	//for import.. renew this
 	if peek == '"' {
 		l.Next()
 		l.Ignore()
@@ -485,6 +540,11 @@ func IdentState(l *Lexer) StateFunc {
 	if peek == '(' {
 		//l.Next()
 		l.Emit(FUNCTION_CALL)
+		return ProbablyWhitespaceState
+	}
+	if peek == '[' {
+		//l.Next()
+		l.Emit(ARRAY_CALL)
 		return ProbablyWhitespaceState
 	}
 

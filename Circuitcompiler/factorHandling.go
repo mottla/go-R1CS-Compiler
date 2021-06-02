@@ -19,6 +19,25 @@ type factor struct {
 	multiplicative *big.Int
 }
 
+//TODO
+func (f factors) Type() TokenType {
+	return f[0].Typ.Type
+}
+func (f factors) SetType(typ TokenType) {
+	if len(f) != 1 {
+		panic("")
+	}
+	if f.Type() == typ {
+		checkRangeValidity(f[0].multiplicative, typ)
+		return
+	}
+	if f.Type() != DecimalNumberToken {
+		panic("")
+	}
+	checkRangeValidity(f[0].multiplicative, typ)
+	f[0].Typ.Type = typ
+}
+
 func (f factors) Len() int {
 	return len(f)
 }
@@ -39,6 +58,19 @@ func (f factor) CopyAndSetMultiplicative(v *big.Int) (n factor) {
 		multiplicative: new(big.Int).Set(v),
 	}
 }
+
+func (f factors) containsArgument() bool {
+	if len(f) == 0 {
+		return false
+	}
+	for _, v := range f {
+		if v.Typ.isArgument {
+			return true
+		}
+	}
+	return false
+}
+
 func (f factor) Negate() (new factor) {
 	new = factor{
 		Typ:            f.Typ,
@@ -108,11 +140,6 @@ func (fac factors) factorSignature() string {
 	return h.String()[:16]
 }
 
-func extractGCD_andSignature(leftFactors factors) (sig MultiplicationGateSignature, extractedLeftFactors factors) {
-	mulL, facL := factorSignature(leftFactors)
-	return MultiplicationGateSignature{identifier: Token{Type: ARGUMENT, Identifier: facL.factorSignature()}, commonExtracted: mulL}, facL
-}
-
 func extractConstant(leftFactors, rightFactors factors) (gcd *big.Int, extractedLeftFactors, extractedRightFactors factors) {
 
 	mulL, facL := factorSignature(leftFactors)
@@ -151,42 +178,8 @@ func mulFactors(leftFactors, rightFactors factors) (result factors) {
 
 		for _, right := range rightFactors {
 
-			if left.Typ.Type == DecimalNumberToken && right.Typ.Type&IN != 0 {
-				leftFactors[i] = factor{Typ: right.Typ, multiplicative: utils.Field.ArithmeticField.Mul(right.multiplicative, left.multiplicative)}
-				//leftFactors[i] = &factor{Typ: right.Typ, multiplicative: utils.Field.ArithmeticField.MulNaive(right.multiplicative, left.multiplicative)}
-				continue
-			}
+			leftFactors[i] = factor{Typ: right.Typ, multiplicative: mulType(right.multiplicative, left.multiplicative, right.Typ.Type)}
 
-			if left.Typ.Type&IN != 0 && right.Typ.Type == DecimalNumberToken {
-				leftFactors[i] = factor{Typ: left.Typ, multiplicative: utils.Field.ArithmeticField.Mul(right.multiplicative, left.multiplicative)}
-				//leftFactors[i] = &factor{Typ: left.Typ, multiplicative: utils.Field.ArithmeticField.MulNaive(right.multiplicative, left.multiplicative)}
-				continue
-			}
-
-			if right.Typ.Type&left.Typ.Type == DecimalNumberToken {
-				res := utils.Field.ArithmeticField.Mul(right.multiplicative, left.multiplicative)
-				leftFactors[i] = factor{Typ: Token{Type: DecimalNumberToken, Identifier: res.String()}, multiplicative: res}
-				//res := utils.Field.ArithmeticField.MulNaive(right.multiplicative, left.multiplicative)
-				//leftFactors[i] = &factor{Typ: Token{Type: DecimalNumberToken, identifier: res.String()}, multiplicative: res}
-				continue
-
-			}
-			//tricky part here
-			//this one should only be reached, after a true multiplicationGate had its left and right braches computed. here we
-			//a factor can appear at most in quadratic form. we reduce terms a*a^-1 here.
-			//if right.Typ.Type&left.Typ.Type&IN != 0 {
-			//	if left.Typ.identifier == right.Typ.identifier {
-			//		if right.invert != left.invert {
-			//			leftFactors[i] = &factor{Typ: Token{Type: DecimalNumberToken}, multiplicative: utils.Field.ArithmeticField.MulNaive(right.multiplicative, left.multiplicative)}
-			//			continue
-			//		}
-			//	}
-			//
-			//	//rightFactors[i] = factor{Typ: CONST, negate: Xor(facRight.negate, facLeft.negate), multiplicative: mul2DVector(facRight.multiplicative, facLeft.multiplicative)}
-			//	//continue
-			//
-			//}
-			panic("unexpected. If this errror is thrown, its probably brcause a true multiplication Gate has been skipped and treated as on with constant multiplication or addition ")
 		}
 	}
 	return leftFactors
@@ -245,7 +238,7 @@ func addFactors(leftFactors, rightFactors factors) factors {
 	}
 
 	if len(res) == 0 {
-		res = []factor{factor{
+		res = []factor{{
 			Typ: Token{
 				Type:       DecimalNumberToken,
 				Identifier: "0",
@@ -294,21 +287,28 @@ func (from factors) primitiveReturnfunction() (gives *function) {
 	if len(from) == 1 {
 		return from[0].primitiveReturnfunction()
 	}
-	return combineFunctions("+", from[0].primitiveReturnfunction(), from[1:].primitiveReturnfunction())
+	panic("")
+	//return combineFunctions("+", from[0].primitiveReturnfunction(), from[1:].primitiveReturnfunction())
+
 }
 
 func (from factor) primitiveReturnfunction() (gives *function) {
 
 	if from.Typ.Type == DecimalNumberToken {
 		c := from.Typ.primitiveReturnfunction()
-		c.isNumber = true
-		c.value = from.multiplicative
 		return c
 	}
 	if from.multiplicative == nil || from.multiplicative.Cmp(bigOne) == 0 {
 		return from.Typ.primitiveReturnfunction()
 	}
-	rmp := newCircuit(from.Typ.Identifier, nil)
+	rmp := NewCircuit(from.Typ.Identifier, nil)
+	rmp.OutputTypes = []returnTypes{{
+		functionReturn: false,
+		fkt:            nil,
+		typ: Token{
+			Type: from.Typ.Type,
+		},
+	}}
 	rmp.taskStack.add(&Constraint{
 		Output: Token{
 			Type: RETURN,
@@ -316,17 +316,17 @@ func (from factor) primitiveReturnfunction() (gives *function) {
 			Identifier: "",
 		},
 		Inputs: []*Constraint{
-			&Constraint{
+			{
 				Output: Token{
 					Type:       ArithmeticOperatorToken,
 					Identifier: "*",
 				},
-			}, &Constraint{
+			}, {
 				Output: Token{
 					Type:       DecimalNumberToken,
 					Identifier: from.multiplicative.String(),
 				},
-			}, &Constraint{
+			}, {
 				Output: from.Typ,
 			},
 		},
@@ -335,74 +335,121 @@ func (from factor) primitiveReturnfunction() (gives *function) {
 }
 
 //TODO add assertions
-func combineFunctions(operation string, a, b *function) *function {
-	if a.isNumber && b.isNumber {
-		switch operation {
-		case "*":
-			f := factor{
-				Typ: Token{
-					Type:       DecimalNumberToken,
-					Identifier: utils.Field.ArithmeticField.Mul(a.value, b.value).String(),
-				},
-				multiplicative: utils.Field.ArithmeticField.Mul(a.value, b.value),
-			}
-			return f.primitiveReturnfunction()
-		case "/":
-			f := factor{
-				Typ: Token{
-					Type:       DecimalNumberToken,
-					Identifier: utils.Field.ArithmeticField.Div(a.value, b.value).String(),
-				},
-				multiplicative: utils.Field.ArithmeticField.Div(a.value, b.value),
-			}
-			return f.primitiveReturnfunction()
-		case "-":
-			f := factor{
-				Typ: Token{
-					Type:       DecimalNumberToken,
-					Identifier: utils.Field.ArithmeticField.Sub(a.value, b.value).String(),
-				},
-				multiplicative: utils.Field.ArithmeticField.Sub(a.value, b.value),
-			}
-			return f.primitiveReturnfunction()
-		case "+":
-			f := factor{
-				Typ: Token{
-					Type:       DecimalNumberToken,
-					Identifier: utils.Field.ArithmeticField.Add(a.value, b.value).String(),
-				},
-				multiplicative: utils.Field.ArithmeticField.Add(a.value, b.value),
-			}
-			return f.primitiveReturnfunction()
-		default:
+func combineFunctions(operation string, l, r, context *function, lc, rc *Constraint) (*function, *Constraint) {
 
-		}
+	rmp := NewCircuit("", context)
+	if len(l.OutputTypes) != 1 {
+		panic("")
 	}
+	if eq, err := l.hasEqualDescription(r); !eq {
+		panic(err)
+	}
+	rmp.OutputTypes = l.OutputTypes
 
-	rmp := newCircuit("", nil)
-	rmp.functions[a.Name] = (a)
-	rmp.functions[b.Name] = (b)
-	rmp.taskStack.add(&Constraint{
+	c := &Constraint{
 		Output: Token{
-			Type:       RETURN,
-			Identifier: "", //fmt.Sprintf("%v%v%v",a.Name,operation,b.Name),
+			Type:       ArithmeticOperatorToken,
+			Identifier: operation,
 		},
-		Inputs: []*Constraint{
-			&Constraint{
-				Output: Token{
-					Type:       ArithmeticOperatorToken,
-					Identifier: operation,
-				},
-			}, &Constraint{
-				Output: Token{
-					Type:       FUNCTION_CALL,
-					Identifier: a.Name,
-				},
-			}, &Constraint{
-				Output: Token{
-					Type:       FUNCTION_CALL,
-					Identifier: b.Name,
-				},
-			}}})
-	return rmp
+		Inputs: []*Constraint{lc, rc}}
+	return rmp, c
+}
+func checkRangeValidity(in *big.Int, tokenType TokenType) bool {
+	switch tokenType {
+	case BOOL:
+		if v := in.Uint64(); v > 1 {
+			panic(fmt.Sprintf("boolean expected, got %v", v))
+		}
+	case U8:
+		if v := in.Uint64(); v > 1<<8 {
+			panic(fmt.Sprintf("Uint8 expected, got %v", v))
+		}
+
+	case U16:
+		if v := in.Uint64(); v > 1<<16 {
+			panic(fmt.Sprintf("Uint16 expected, got %v", v))
+		}
+
+	case U32:
+		if v := in.Uint64(); v > 1<<32 {
+			panic(fmt.Sprintf("uint32 expected, got %v", v))
+		}
+
+	case U64: //cannot be reached. since uint64 conversion would fail anyway
+		if v := in.Uint64(); v > ^uint64(1) {
+			panic(fmt.Sprintf("uint64 expected, got %v", v))
+		}
+	case FIELD:
+
+	}
+	return true
+}
+func addType(l, r *big.Int, tokenType TokenType) *big.Int {
+	checkRangeValidity(l, tokenType)
+	checkRangeValidity(r, tokenType)
+	switch tokenType {
+	case BOOL:
+		return new(big.Int).Xor(l, r)
+	case U8:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint8(ll) + uint8(rr)))
+
+	case U16:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint16(ll) + uint16(rr)))
+
+	case U32:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint32(ll) + uint32(rr)))
+
+	case U64: //cannot be reached. since uint64 conversion would fail anyway
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(ll + rr)
+
+	case FIELD:
+		return utils.Field.ArithmeticField.Add(l, r)
+
+	case DecimalNumberToken:
+
+		return utils.Field.ArithmeticField.Add(l, r)
+	}
+	panic("")
+}
+
+func mulType(l, r *big.Int, tokenType TokenType) *big.Int {
+	checkRangeValidity(l, tokenType)
+	checkRangeValidity(r, tokenType)
+	switch tokenType {
+	case BOOL:
+		return utils.Field.ArithmeticField.Mul(l, r)
+	case U8:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint8(ll) * uint8(rr)))
+
+	case U16:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint16(ll) * uint16(rr)))
+
+	case U32:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint32(ll) * uint32(rr)))
+
+	case U64: //cannot be reached. since uint64 conversion would fail anyway
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(ll * rr)
+
+	case FIELD:
+		return utils.Field.ArithmeticField.Mul(l, r)
+	case DecimalNumberToken:
+		return utils.Field.ArithmeticField.Mul(l, r)
+	}
+	panic("")
 }

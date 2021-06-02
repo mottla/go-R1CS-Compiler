@@ -20,6 +20,7 @@ func (g *gateContainer) OrderedGates() []*Gate {
 func (g *gateContainer) completeFunction(f factors) {
 
 	//if len f is 1, we can simpl
+	//todo single number call is outdated
 	if f == nil || len(f) == 0 || f.isSingleNumber() {
 		return
 	}
@@ -47,15 +48,30 @@ func (g *gateContainer) contains(tok string) bool {
 
 func (g *gateContainer) Add(gate *Gate) (id Token) {
 
+	if !gate.leftIns.containsArgument() && !gate.rightIns.containsArgument() && !gate.outIns.containsArgument() {
+		//panic("gate where no input is an argument?")
+	}
+
 	if !g.contains(gate.ID()) {
 		g.computedFactors[gate.ID()] = true
 		g.orderedmGates = append(g.orderedmGates, gate)
 	} else {
 		//fmt.Println("saved reuse of "+gate.String())
 	}
-
+	var ty TokenType
+	if gate.rightIns != nil {
+		ty = gate.rightIns[0].Typ.Type
+	}
+	if gate.leftIns != nil {
+		ty |= gate.leftIns[0].Typ.Type
+	}
+	if gate.outIns != nil {
+		ty |= gate.outIns[0].Typ.Type
+	}
 	return Token{
-		Type:       ARGUMENT,
+		//todo note that thats bs
+		Type:       ty,
 		Identifier: gate.ID(),
+		isArgument: true,
 	}
 }
