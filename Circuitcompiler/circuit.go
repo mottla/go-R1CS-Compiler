@@ -87,7 +87,7 @@ func (v *function) outputs() []returnTypes {
 	return v.OutputTypes
 }
 
-func (this *function) hasEqualOutput(thenThese []*function) (answer bool, error string) {
+func (f *function) checkIfReturnsMatchHeader(thenThese []*function) (answer bool, error string) {
 	nrReturns := 0
 
 	collecteOutputs := []returnTypes{}
@@ -98,11 +98,11 @@ func (this *function) hasEqualOutput(thenThese []*function) (answer bool, error 
 		collecteOutputs = append(collecteOutputs, out...)
 	}
 
-	if len(this.OutputTypes) != nrReturns {
-		return false, fmt.Sprintf("expected %v return values, got %v", len(this.OutputTypes), len(thenThese))
+	if len(f.OutputTypes) != nrReturns {
+		return false, fmt.Sprintf("expected %v return values, got %v", len(f.OutputTypes), len(thenThese))
 	}
 
-	for i, v := range this.OutputTypes {
+	for i, v := range f.OutputTypes {
 		if b, err := v.compare(collecteOutputs[i]); !b {
 			return false, err
 		}
@@ -111,6 +111,21 @@ func (this *function) hasEqualOutput(thenThese []*function) (answer bool, error 
 	return true, ""
 }
 
+func (this *function) hasEqualDescription2(thenThat returnTypes) (answer bool, error string) {
+	l := this.description()
+	r := ""
+	if !thenThat.functionReturn {
+		r = thenThat.typ.primitiveReturnfunction().description()
+	} else {
+		r = thenThat.fkt.description()
+	}
+
+	if strings.EqualFold(l, r) {
+		return true, ""
+	}
+
+	return false, fmt.Sprintf("%v expects %v, got %v", this.Name, l, r)
+}
 func (this *function) hasEqualDescription(thenThat *function) (answer bool, error string) {
 	l := this.description()
 	r := thenThat.description()
@@ -323,6 +338,7 @@ func (currentCircuit *function) getsLoadedWith(newInputs []*function) {
 		}
 		b, err := currentCircuit.InputTypes[i].compare(out[0])
 		if b {
+			//do we need this map assignment?
 			currentCircuit.functions[currentCircuit.InputIdentifiers[0]] = newInputs[0]
 			currentCircuit.InputTypes = currentCircuit.InputTypes[1:]
 			currentCircuit.InputIdentifiers = currentCircuit.InputIdentifiers[1:]

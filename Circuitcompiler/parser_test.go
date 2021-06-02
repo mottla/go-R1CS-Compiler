@@ -32,7 +32,7 @@ func TestArray(t *testing.T) {
 	toks := parser.stackAllTokens()
 	toks = toks[:len(toks)-1]
 	ct := Constraint{}
-	parser.parseExpression(toks, NewCircuit("", &function{}))
+	parser.parseExpression(toks, NewCircuit("", &function{}), &Constraint{})
 	fmt.Println(ct)
 }
 func TestNewParse(t *testing.T) {

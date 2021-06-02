@@ -51,10 +51,14 @@ func TestForProgram(t *testing.T) {
 	func a()(func(c bool)(bool)) {	
 		return func(a bool)(bool){return true}
 	}
-	func main(x bool,y func(x bool)(bool))(func(a field)(bool)) {	
-		var b = a()
-		x = x*x
-		x = x*x
+	func square(x bool)(bool){ return x*x }
+	func test()(bool,field){
+		return true,3
+	}
+	func main(x bool,z field,y func(x bool)(bool))(func(a field)(bool)) {
+		#x,z = test()
+		x = square(x)
+		x = square(x)*square(x)
 		return func(a field)(bool) { return x*x }
 	}
 
@@ -70,7 +74,7 @@ func TestForProgram(t *testing.T) {
 	fmt.Println(r1cs.L)
 	fmt.Println(r1cs.R)
 	fmt.Println(r1cs.O)
-	inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, []*big.Int{big.NewInt(int64(27)), big.NewInt(int64(3))})
+	inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, []*big.Int{big.NewInt(int64(27)), big.NewInt(int64(27)), big.NewInt(int64(3))})
 
 	fmt.Println("input")
 	fmt.Println(inputs)
