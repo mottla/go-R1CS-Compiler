@@ -17,9 +17,7 @@ const (
 	EOFRune rune = -1
 )
 
-type Tokens struct {
-	toks []Token
-}
+type Tokens []Token
 
 type Token struct {
 	Type       TokenType
@@ -40,27 +38,28 @@ func (ch Token) String() string {
 	}
 	return fmt.Sprintf("%v", ch.Type)
 }
+func (t Token) copy() Token {
+	return Token{
+		Type:       t.Type,
+		Identifier: t.Identifier,
+		value:      new(big.Int).Set(t.value),
+		isArray:    t.isArray,
+		isArgument: t.isArgument,
+		dimensions: t.dimensions,
+		readInLine: t.readInLine,
+	}
+}
+func (t Token) equalDescription(a Token) bool {
+	return t.isArgument == a.isArgument && t.isArray == a.isArray && t.Identifier == a.Identifier && ArrayString(t.dimensions) == ArrayString(a.dimensions)
+}
 
-func (t *Tokens) next() (r Token) {
-	if len(t.toks) == 0 {
+func (t Tokens) next() (r Token) {
+	if len(t) == 0 {
 		return Token{}
 	}
-	r = t.toks[0]
-	t.toks = t.toks[1:]
+	r = t[0]
+	t = t[1:]
 	return r
-}
-func (t Token) toFactors() (r factors) {
-	r = []factor{{
-		Typ:            t,
-		multiplicative: bigOne,
-	}}
-	return
-}
-func (t Token) toFactor() factor {
-	return factor{
-		Typ:            t,
-		multiplicative: bigOne,
-	}
 }
 
 var decimalNumberTokens = "0123456789"

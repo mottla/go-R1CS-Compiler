@@ -203,8 +203,8 @@ func (currentCircuit *function) checkStaticCondition(c *Constraint) (isStatic, i
 	if factorsB.fac().containsArgument() {
 		return false, false
 	}
-	A = factorsA.fac()[0].multiplicative
-	B = factorsB.fac()[0].multiplicative
+	A = factorsA.fac()[0].value
+	B = factorsB.fac()[0].value
 
 	switch c.Inputs[0].Output.Identifier {
 	case "==":
@@ -368,7 +368,7 @@ func (currentCircuit *function) resolveArrayName(id string, inputs []*Constraint
 		if len(indexFactors) > 1 {
 			panic("unexpected")
 		}
-		tmp := indexFactors.fac()[0].multiplicative
+		tmp := indexFactors.fac()[0].value
 		arrayIdentifier += fmt.Sprintf("[%v]", tmp)
 	}
 	return arrayIdentifier

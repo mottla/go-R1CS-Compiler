@@ -7,29 +7,36 @@ import (
 )
 
 type returnTyped struct {
-	facs              factors
+	facs              Tokens
 	preloadedFunction *function
 }
 type bundle []returnTyped
 
-func ret(facs factors,
+func ret(facs Tokens,
 	preloadedFunction *function) returnTyped {
 	return returnTyped{
 		facs:              facs,
 		preloadedFunction: preloadedFunction,
 	}
 }
-func rets(facs factors,
+func rets(facs Tokens,
 	preloadedFunction *function) []returnTyped {
 	return []returnTyped{{
 		facs:              facs,
 		preloadedFunction: preloadedFunction},
 	}
 }
+
+func (t Token) toBundle() bundle {
+	return []returnTyped{{
+		facs:              Tokens{t},
+		preloadedFunction: nil},
+	}
+}
 func emptyRets() ([]returnTyped, bool) {
 	return rets(nil, nil), false
 }
-func (f bundle) fac() factors {
+func (f bundle) fac() Tokens {
 	if len(f) == 0 {
 		return nil
 	}
@@ -46,9 +53,6 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	}
 
 	switch currentConstraint.Output.Type {
-	case DecimalNumberToken:
-		f := factor{Typ: Token{Type: DecimalNumberToken, Identifier: currentConstraint.Output.Identifier}, multiplicative: currentConstraint.Output.value}
-		return rets(factors{f}, nil), false
 	case IDENTIFIER_VARIABLE:
 
 		if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); ex {
@@ -190,7 +194,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	//	}
 	//
 	//	negatedConditions := []*function{}
-	//	var result factors
+	//	var result Tokens
 	//	for _, task := range ifElseCircuits.taskStack.data {
 	//		statement, ex := ifElseCircuits.findFunctionInBloodline(task.Output.Identifier)
 	//		if !ex {
@@ -302,11 +306,9 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			sGate := summationGate(addFactors(extractedLeft, extractedRight))
 			id := gateCollector.Add(sGate)
 
-			fres := factors{factor{
-				Typ:            id,
-				multiplicative: commonExtracted,
-			}}
-			return rets(fres, nil), false
+			fres := id.CopyAndSetMultiplicative(commonExtracted)
+
+			return fres.toBundle(), false
 		case "equal":
 			if len(currentConstraint.Inputs) != 2 {
 				panic("equality constraint requires 2 arguments")
@@ -488,7 +490,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		case "^": //bitwise xor
 			_, _, xorIDs := currentCircuit.xor(currentConstraint, gateCollector)
 
-			bitsScaled := make(factors, len(xorIDs))
+			bitsScaled := make(Tokens, len(xorIDs))
 			for i, v := range xorIDs {
 				bitsScaled[i] = v.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
 			}
@@ -502,7 +504,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		case "&": //bitwise and
 			_, _, andIDs := currentCircuit.and(currentConstraint, gateCollector)
 
-			bitsScaled := make(factors, len(andIDs))
+			bitsScaled := make(Tokens, len(andIDs))
 			for i, v := range andIDs {
 				bitsScaled[i] = v.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
 			}
@@ -516,7 +518,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		case "|": //bitwise or
 			_, _, andIDs := currentCircuit.or(currentConstraint, gateCollector)
 
-			bitsScaled := make(factors, len(andIDs))
+			bitsScaled := make(Tokens, len(andIDs))
 			for i, v := range andIDs {
 				bitsScaled[i] = v.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
 			}
@@ -551,7 +553,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			nTok := gateCollector.Add(mGate)
 
 			f := factor{Typ: nTok, multiplicative: commonFactor}
-			return rets(factors{f}, nil), currentConstraint.Output.Type == RETURN
+			return rets(Tokens{f}, nil), currentConstraint.Output.Type == RETURN
 		case "/":
 			//a / b
 			leftFactors, _ = currentCircuit.compile(left, gateCollector)
@@ -579,7 +581,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			nTok := gateCollector.Add(g)
 
 			f := factor{Typ: nTok, multiplicative: commonF}
-			return rets(factors{f}, nil), currentConstraint.Output.Type == RETURN
+			return rets(Tokens{f}, nil), currentConstraint.Output.Type == RETURN
 		case "**":
 			//apply a fixed exponent exponentiation using a simple square and multiply method
 			leftFactors, _ = currentCircuit.compile(left, gateCollector)
@@ -741,14 +743,14 @@ func split(makeTheBitsAvailableInCurrentCircuit bool, currentCircuit *function, 
 	return bits
 }
 
-func (currentCircuit *function) xor(currentConstraint *Constraint, gateCollector *gateContainer) (argLeft, argRight Token, xorIDS factors) {
+func (currentCircuit *function) xor(currentConstraint *Constraint, gateCollector *gateContainer) (argLeft, argRight Token, xorIDS Tokens) {
 	left := currentConstraint.Inputs[1]
 	right := currentConstraint.Inputs[2]
 
 	argLeft, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
 	argRight, bitsRight := currentCircuit.SPLIT(false, right, gateCollector)
 
-	xorIDs := make(factors, len(bitsRight))
+	xorIDs := make(Tokens, len(bitsRight))
 
 	for i := len(bitsLeft) - 1; i >= 0; i-- {
 		// a xor b = c as arithmetic circuit (asserting that a,b \in {0,1}
@@ -758,14 +760,14 @@ func (currentCircuit *function) xor(currentConstraint *Constraint, gateCollector
 	return argLeft, argRight, xorIDs
 }
 
-func (currentCircuit *function) and(currentConstraint *Constraint, gateCollector *gateContainer) (argLeft, argRight Token, xorIDS factors) {
+func (currentCircuit *function) and(currentConstraint *Constraint, gateCollector *gateContainer) (argLeft, argRight Token, xorIDS Tokens) {
 	left := currentConstraint.Inputs[1]
 	right := currentConstraint.Inputs[2]
 
 	argLeft, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
 	argRight, bitsRight := currentCircuit.SPLIT(false, right, gateCollector)
 
-	andIDs := make(factors, len(bitsRight))
+	andIDs := make(Tokens, len(bitsRight))
 
 	for i := len(bitsLeft) - 1; i >= 0; i-- {
 		//a*b = c
@@ -773,14 +775,14 @@ func (currentCircuit *function) and(currentConstraint *Constraint, gateCollector
 	}
 	return argLeft, argRight, andIDs
 }
-func (currentCircuit *function) or(currentConstraint *Constraint, gateCollector *gateContainer) (argLeft, argRight Token, xorIDS factors) {
+func (currentCircuit *function) or(currentConstraint *Constraint, gateCollector *gateContainer) (argLeft, argRight Token, xorIDS Tokens) {
 	left := currentConstraint.Inputs[1]
 	right := currentConstraint.Inputs[2]
 
 	argLeft, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
 	argRight, bitsRight := currentCircuit.SPLIT(false, right, gateCollector)
 
-	orIds := make(factors, len(bitsRight))
+	orIds := make(Tokens, len(bitsRight))
 
 	for i := len(bitsLeft) - 1; i >= 0; i-- {
 		//ab = -c + a + b
@@ -789,7 +791,7 @@ func (currentCircuit *function) or(currentConstraint *Constraint, gateCollector 
 	return argLeft, argRight, orIds
 }
 
-func (currentCircuit *function) equalityGate(currentConstraint *Constraint, gateCollector *gateContainer) (facs factors) {
+func (currentCircuit *function) equalityGate(currentConstraint *Constraint, gateCollector *gateContainer) (facs Tokens) {
 
 	argLeft, argRight, xorIDs := currentCircuit.xor(currentConstraint, gateCollector)
 
@@ -831,7 +833,7 @@ func (currentCircuit *function) equalityGate(currentConstraint *Constraint, gate
 	c3.leftIns = xorIDs
 	c3.noNewOutput = true
 
-	c3.outIns = factors{Token{
+	c3.outIns = Tokens{Token{
 		Type: DecimalNumberToken,
 	}.toFactor(), c1.toFactor().Negate()}
 

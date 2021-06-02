@@ -51,15 +51,17 @@ func TestForProgram(t *testing.T) {
 	func a()(func(c bool)(bool)) {	
 		return func(a bool)(bool){return true}
 	}
-	func square(x bool)(bool){ return x*x }
+	func square(x field)(field){ return x*x }
+	func mul(a field,b field)(field){return b*a }
 	func test()(bool,field){
 		return true,3
 	}
-	func main(x bool,z field,y func(x bool)(bool))(func(a field)(bool)) {
+	func main(x field,z field,y func(x bool)(bool))(func(a field)(bool)) {
 		#x,z = test()
-		x = square(x)
+		var mul5 = mul(5)
+		x = mul5(square(x))
 		x = square(x)*square(x)
-		return func(a field)(bool) { return x*x }
+		return func(a field)(bool) { return true }
 	}
 
 `

@@ -61,7 +61,7 @@ func BigIsOdd(n *big.Int) bool {
 	return n.Bit(0) == 1
 }
 
-func maxInt(a, b int) int {
+func MaxInt(a, b int) int {
 	if a > b {
 		return a
 	}
@@ -116,16 +116,10 @@ func maximum(a ...int) int {
 	if len(a) == 0 {
 		return math.MinInt64
 	}
-	return max(a[0], maximum(a[1:]...))
+	return MaxInt(a[0], maximum(a[1:]...))
 
 }
-func max(a, b int) int {
 
-	if a > b {
-		return a
-	}
-	return b
-}
 func AbsInt(i int) int {
 	if i < 0 {
 		return -i

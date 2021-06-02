@@ -17,7 +17,7 @@ func (g *gateContainer) OrderedGates() []*Gate {
 	return g.orderedmGates
 }
 
-func (g *gateContainer) completeFunction(f factors) {
+func (g *gateContainer) completeFunction(f Tokens) {
 
 	//if len f is 1, we can simpl
 	//todo single number call is outdated

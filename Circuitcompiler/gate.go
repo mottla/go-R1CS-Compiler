@@ -9,9 +9,9 @@ import (
 
 type Gate struct {
 	identifier string
-	leftIns    factors //leftIns and RightIns after addition gates have been reduced. only multiplication gates remain
-	rightIns   factors
-	outIns     factors
+	leftIns    Tokens //leftIns and RightIns after addition gates have been reduced. only multiplication gates remain
+	rightIns   Tokens
+	outIns     Tokens
 	//extractedConstants *big.Int
 	noNewOutput bool
 
@@ -50,7 +50,7 @@ func (gate *Gate) setAndGetID() (id string) {
 }
 
 // id * id^-1 = 1
-func inverseGate(id factors) (g *Gate) {
+func inverseGate(id Tokens) (g *Gate) {
 	g = &Gate{
 		leftIns: id,
 		outIns: Token{
@@ -61,7 +61,7 @@ func inverseGate(id factors) (g *Gate) {
 	return
 }
 
-func multiplicationGate(left, right factors) (g *Gate) {
+func multiplicationGate(left, right Tokens) (g *Gate) {
 	g = &Gate{
 		leftIns:  left,
 		rightIns: right,
@@ -71,7 +71,7 @@ func multiplicationGate(left, right factors) (g *Gate) {
 }
 
 //ensures that either left*right=0
-func zeroConstraintGate(left, right factors) (g *Gate) {
+func zeroConstraintGate(left, right Tokens) (g *Gate) {
 	g = &Gate{
 		leftIns:     left,
 		rightIns:    right,
@@ -81,7 +81,7 @@ func zeroConstraintGate(left, right factors) (g *Gate) {
 }
 
 // a/b = c -> a = b*c
-func divisionGate(a, b factors) (g *Gate) {
+func divisionGate(a, b Tokens) (g *Gate) {
 	g = &Gate{
 		leftIns: b,
 		outIns:  a,
@@ -100,7 +100,7 @@ func zeroOrOneGate(id string) (g *Gate) {
 	}
 
 	g = &Gate{
-		leftIns: factors{one,
+		leftIns: Tokens{one,
 			Token{
 				Identifier: id,
 			}.toFactor().Negate(),
@@ -119,9 +119,9 @@ func xorGate(a, b factor) (g *Gate) {
 
 	var mGate = new(Gate)
 	//some dangerous stuff is happening here.. check later dude
-	mGate.leftIns = factors{a.CopyAndSetMultiplicative(new(big.Int).Mul(a.multiplicative, big.NewInt(2)))}
-	mGate.rightIns = factors{b}
-	mGate.outIns = addFactors(factors{a}, factors{b})
+	mGate.leftIns = Tokens{a.CopyAndSetMultiplicative(new(big.Int).Mul(a.multiplicative, big.NewInt(2)))}
+	mGate.rightIns = Tokens{b}
+	mGate.outIns = addFactors(Tokens{a}, Tokens{b})
 
 	xor := factor{
 		Typ:            Token{Identifier: mGate.ID()},
@@ -138,9 +138,9 @@ func orGate(a, b factor) (g *Gate) {
 
 	var mGate = new(Gate)
 
-	mGate.leftIns = factors{a}
-	mGate.rightIns = factors{b}
-	mGate.outIns = addFactors(factors{a}, factors{b})
+	mGate.leftIns = Tokens{a}
+	mGate.rightIns = Tokens{b}
+	mGate.outIns = addFactors(Tokens{a}, Tokens{b})
 
 	xor := factor{
 		Typ:            Token{Identifier: mGate.ID()},
@@ -152,7 +152,7 @@ func orGate(a, b factor) (g *Gate) {
 }
 
 //left * 1 = right
-func equalityGate(left, right factors) (g *Gate) {
+func equalityGate(left, right Tokens) (g *Gate) {
 	one := Token{
 		Type: DecimalNumberToken,
 	}.toFactors()
@@ -166,7 +166,7 @@ func equalityGate(left, right factors) (g *Gate) {
 }
 
 // (in1+in2+... )*1 = newOut
-func summationGate(in factors) (g *Gate) {
+func summationGate(in Tokens) (g *Gate) {
 	one := Token{
 		Type: DecimalNumberToken,
 	}.toFactors()

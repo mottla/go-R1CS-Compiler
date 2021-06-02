@@ -761,7 +761,7 @@ func (p *Parser) resolveArrayName(currentCircuit *function, con *Constraint) (co
 		if len(bund.fac()) > 1 {
 			panic("unexpected")
 		}
-		tmp, err := strconv.ParseInt(bund.fac()[0].Typ.Identifier, 10, 64)
+		tmp, err := strconv.ParseInt(bund.fac()[0].Identifier, 10, 64)
 		if err != nil || tmp < 0 {
 			p.error(err.Error())
 		}
@@ -948,9 +948,7 @@ func splitAtFirstHighestStringType(in []Token, splitAt ...string) (cutLeft []Tok
 					}
 					return in[:i], in[i+1:]
 				}
-
 			}
-
 		}
 
 		switch in[i].Identifier {
@@ -1107,4 +1105,7 @@ func ArrayStringBuild(in []int64, res string, coll *[]string) {
 		str := fmt.Sprintf("%v[%v]", res, j)
 		ArrayStringBuild(in[1:], str, coll)
 	}
+}
+func ArrayString(dimension []int64) string {
+	return fmt.Sprintf("%v", dimension)
 }

@@ -12,122 +12,65 @@ import (
 var bigZero = big.NewInt(0)
 var bigOne = big.NewInt(1)
 
-type factors []factor
-
-type factor struct {
-	Typ            Token
-	multiplicative *big.Int
-}
-
-//TODO
-func (f factors) Type() TokenType {
-	return f[0].Typ.Type
-}
-func (f factors) SetType(typ TokenType) {
-	if len(f) != 1 {
-		panic("")
-	}
-	if f.Type() == typ {
-		checkRangeValidity(f[0].multiplicative, typ)
-		return
-	}
-	if f.Type() != DecimalNumberToken {
-		panic("")
-	}
-	checkRangeValidity(f[0].multiplicative, typ)
-	f[0].Typ.Type = typ
-}
-
-func (f factors) Len() int {
+func (f Tokens) Len() int {
 	return len(f)
 }
 
-func (f factors) Swap(i, j int) {
+func (f Tokens) Swap(i, j int) {
 	f[i], f[j] = f[j], f[i]
 }
 
-func (f factors) Less(i, j int) bool {
+func (f Tokens) Less(i, j int) bool {
 	if strings.Compare(f[i].String(), f[j].String()) < 0 {
 		return false
 	}
 	return true
 }
-func (f factor) CopyAndSetMultiplicative(v *big.Int) (n factor) {
-	return factor{
-		Typ:            f.Typ,
-		multiplicative: new(big.Int).Set(v),
-	}
+func (f Token) CopyAndSetMultiplicative(v *big.Int) (n Token) {
+	n = f.copy()
+	n.value = v
+	return
 }
 
-func (f factors) containsArgument() bool {
+func (f Tokens) containsArgument() bool {
 	if len(f) == 0 {
 		return false
 	}
 	for _, v := range f {
-		if v.Typ.isArgument {
+		if v.isArgument {
 			return true
 		}
 	}
 	return false
 }
 
-func (f factor) Negate() (new factor) {
-	new = factor{
-		Typ:            f.Typ,
-		multiplicative: utils.Field.ArithmeticField.Neg(f.multiplicative),
-	}
-	return new
-}
-func (f factors) Negate() (new factors) {
-	new = make(factors, len(f))
-	for i, v := range f {
-		new[i] = v.Negate()
-	}
-	return
+func (t Token) toFactors() Tokens {
+	return Tokens{t}
 }
 
-func (t factor) toFactors() factors {
-	return factors{t}
-}
-func (f factor) String() string {
-
-	str := f.Typ.Identifier
-
-	return fmt.Sprintf("(\"%s\"  fac: %v)", str, f.multiplicative)
-}
-
-func (f factor) clone() (res factor) {
-	return factor{multiplicative: new(big.Int).Set(f.multiplicative), Typ: f.Typ}
-
-}
-
-func (f factors) clone() (res factors) {
-	res = make(factors, len(f))
+func (f Tokens) clone() (res Tokens) {
+	res = make(Tokens, len(f))
 	for k, v := range f {
-		res[k] = v.clone()
+		res[k] = v.copy()
 	}
 	return
 }
-func (f factors) isSingleNumber() bool {
-	return len(f) == 1 && f[0].Typ.Type == DecimalNumberToken
 
-}
+func extractGCD(f Tokens) (Tokens, *big.Int) {
 
-func extractGCD(f factors) (factors, *big.Int) {
-
-	gcd := f[0].multiplicative
+	gcd := f[0].value
 	for i := 1; i < len(f); i++ {
-		gcd = new(big.Int).GCD(nil, nil, f[i].multiplicative, gcd)
+		gcd = new(big.Int).GCD(nil, nil, f[i].value, gcd)
 	}
 	for i := 0; i < len(f); i++ {
-		f[i].multiplicative = new(big.Int).Div(f[i].multiplicative, gcd)
+		f[i].value = new(big.Int).Div(f[i].value, gcd)
 
 	}
 	return f, gcd
 
 }
 
-func hashFactorsToBig(f factors) *big.Int {
+func hashFactorsToBig(f Tokens) *big.Int {
 	sha := sha256.New()
 	for _, fac := range f {
 		sha.Write([]byte(fac.String()))
@@ -135,12 +78,12 @@ func hashFactorsToBig(f factors) *big.Int {
 	return new(big.Int).SetBytes(sha.Sum(nil))
 }
 
-func (fac factors) factorSignature() string {
+func (fac Tokens) factorSignature() string {
 	h := hashFactorsToBig(fac)
 	return h.String()[:16]
 }
 
-func extractConstant(leftFactors, rightFactors factors) (gcd *big.Int, extractedLeftFactors, extractedRightFactors factors) {
+func extractConstant(leftFactors, rightFactors Tokens) (gcd *big.Int, extractedLeftFactors, extractedRightFactors Tokens) {
 
 	mulL, facL := factorSignature(leftFactors)
 	mulR, facR := factorSignature(rightFactors)
@@ -150,23 +93,16 @@ func extractConstant(leftFactors, rightFactors factors) (gcd *big.Int, extracted
 	return res, facL, facR
 }
 
-func factorSignature(facs factors) (gcd *big.Int, extractedRightFactors factors) {
+func factorSignature(facs Tokens) (gcd *big.Int, extractedRightFactors Tokens) {
 	facs = facs.clone()
 	facs, gcd = extractGCD(facs)
 	sort.Sort(facs)
 	return gcd, facs
 }
 
-func (fact factors) scalarMultiplyFactors(x *big.Int) (result factors) {
-	for _, left := range fact {
-		left.multiplicative = utils.Field.ArithmeticField.Mul(left.multiplicative, x)
-	}
-	return fact
-}
-
 //multiplies factor elements and returns the result
-//in case the factors do not hold any constants and all inputs are distinct, the extractedConstants will be the concatenation of left+right
-func mulFactors(leftFactors, rightFactors factors) (result factors) {
+//in case the Tokens do not hold any constants and all inputs are distinct, the extractedConstants will be the concatenation of left+right
+func mulFactors(leftFactors, rightFactors Tokens) (result Tokens) {
 
 	if len(leftFactors) < len(rightFactors) {
 		tmp := leftFactors
@@ -178,109 +114,40 @@ func mulFactors(leftFactors, rightFactors factors) (result factors) {
 
 		for _, right := range rightFactors {
 
-			leftFactors[i] = factor{Typ: right.Typ, multiplicative: mulType(right.multiplicative, left.multiplicative, right.Typ.Type)}
+			leftFactors[i] = leftFactors[i].CopyAndSetMultiplicative(mulType(right.value, left.value, right.Type))
 
 		}
 	}
 	return leftFactors
 }
 
-//adds two factors to one iff they are both are constants or of the same variable
-func addFactor(facLeft, facRight factor) (couldAdd bool, sum factor) {
-	if facLeft.Typ.Type&facRight.Typ.Type == DecimalNumberToken {
-		//res := utils.Field.ArithmeticField.Add(facLeft.multiplicative, facRight.multiplicative)
-		res := utils.Field.ArithmeticField.Add(facLeft.multiplicative, facRight.multiplicative)
-		return true, factor{Typ: Token{
-			Type:       DecimalNumberToken,
-			Identifier: res.String(),
-		}, multiplicative: res}
+//adds two Tokens to one iff they are both are constants or of the same variable
+func add(leftFactors Tokens, a Token) {
 
+	for i, v := range leftFactors {
+		if v.equalDescription(a) {
+			leftFactors[i].value = addType(v.value, a.value, a.Type)
+			return
+		}
 	}
+	leftFactors = append(leftFactors, a)
 
-	if facLeft.Typ.Type == facRight.Typ.Type && facLeft.Typ.Identifier == facRight.Typ.Identifier {
-		return true, factor{Typ: facRight.Typ, multiplicative: utils.Field.ArithmeticField.Add(facLeft.multiplicative, facRight.multiplicative)}
-
-	}
-
-	return false, factor{}
+	return
 
 }
 
 //returns the reduced sum of two input factor arrays
 //if no reduction was done, it returns the concatenation of the input arrays
-func addFactors(leftFactors, rightFactors factors) factors {
-	var found bool
-	res := make(factors, 0, len(leftFactors)+len(rightFactors))
-	for _, facLeft := range leftFactors {
+func addFactors(leftFactors, rightFactors Tokens) Tokens {
 
-		found = false
-		for i, facRight := range rightFactors {
-
-			var sum factor
-			found, sum = addFactor(facLeft, facRight)
-
-			if found {
-				rightFactors[i] = sum
-				break
-			}
-
-		}
-		if !found {
-			res = append(res, facLeft)
-		}
+	for _, facRight := range rightFactors {
+		add(leftFactors, facRight)
 	}
 
-	//not that we should keep at leost one 0 factor, in case all are 0
-	for _, val := range rightFactors {
-		if val.multiplicative.Cmp(bigZero) != 0 {
-			res = append(res, val)
-		}
-	}
-
-	if len(res) == 0 {
-		res = []factor{{
-			Typ: Token{
-				Type:       DecimalNumberToken,
-				Identifier: "0",
-			},
-			multiplicative: bigZero,
-		}}
-	}
-	return res
-}
-func negateFactors(in factors) (r factors) {
-	r = make(factors, len(in))
-	for i := range in {
-		//leftFactors[i].multiplicative = utils.Field.ArithmeticField.Neg(leftFactors[i].multiplicative)
-		r[i].multiplicative = utils.Field.ArithmeticField.Neg(in[i].multiplicative)
-		r[i].Typ = Token{
-			Type:       in[i].Typ.Type,
-			Identifier: in[i].Typ.Identifier}
-		if in[i].Typ.Type == DecimalNumberToken {
-			r[i].Typ.Identifier = r[i].multiplicative.String()
-		}
-	}
-	return r
-}
-func (fac factors) bitComplexity() (res int) {
-	for _, i := range fac {
-		res += i.multiplicative.BitLen()
-	}
-	return res
-}
-
-func invertFactors(leftFactors factors) factors {
-	leftFactors = leftFactors.clone()
-	for i := range leftFactors {
-		leftFactors[i].multiplicative = utils.Field.ArithmeticField.Inverse(leftFactors[i].multiplicative)
-		if leftFactors[i].Typ.Type == DecimalNumberToken {
-			leftFactors[i].Typ.Identifier = leftFactors[i].multiplicative.String()
-		}
-	}
 	return leftFactors
 }
 
-func (from factors) primitiveReturnfunction() (gives *function) {
+func (from Tokens) primitiveReturnfunction() (gives *function) {
 	if len(from) == 0 {
 		return &function{}
 	}
@@ -290,48 +157,6 @@ func (from factors) primitiveReturnfunction() (gives *function) {
 	panic("")
 	//return combineFunctions("+", from[0].primitiveReturnfunction(), from[1:].primitiveReturnfunction())
 
-}
-
-func (from factor) primitiveReturnfunction() (gives *function) {
-
-	if from.Typ.Type == DecimalNumberToken {
-		c := from.Typ.primitiveReturnfunction()
-		return c
-	}
-	if from.multiplicative == nil || from.multiplicative.Cmp(bigOne) == 0 {
-		return from.Typ.primitiveReturnfunction()
-	}
-	rmp := NewCircuit(from.Typ.Identifier, nil)
-	rmp.OutputTypes = []returnTypes{{
-		functionReturn: false,
-		fkt:            nil,
-		typ: Token{
-			Type: from.Typ.Type,
-		},
-	}}
-	rmp.taskStack.add(&Constraint{
-		Output: Token{
-			Type: RETURN,
-			//identifier: fmt.Sprintf("%v*%v",from.multiplicative.String(),from.Typ.identifier),
-			Identifier: "",
-		},
-		Inputs: []*Constraint{
-			{
-				Output: Token{
-					Type:       ArithmeticOperatorToken,
-					Identifier: "*",
-				},
-			}, {
-				Output: Token{
-					Type:       DecimalNumberToken,
-					Identifier: from.multiplicative.String(),
-				},
-			}, {
-				Output: from.Typ,
-			},
-		},
-	})
-	return rmp
 }
 
 //TODO add assertions

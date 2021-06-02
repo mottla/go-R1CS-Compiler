@@ -37,56 +37,7 @@ var sudoku = func() []*big.Int {
 	return res
 }
 var TestPrograms = []TraceCorrectnessTest{
-	{
-		Skip: true,
-		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(27)), big.NewInt(int64(3))},
-			Result: big.NewInt(int64(49)),
-		}},
-		Code: `
-	func main(x,y) {
 
-	}
-`,
-	},
-	{
-		Skip: false,
-		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(7)), big.NewInt(int64(11))},
-			Result: big.NewInt(int64(1729500084900343)),
-		}, {
-			Inputs: []*big.Int{big.NewInt(int64(365235)), big.NewInt(int64(11876525))},
-
-			Result: bigNumberResult1,
-		}},
-		Code: `
-	func main( x  ,  z ) {
-	public{
-	x,
-	z
-	}
-		return do(z) + add(x,x)
-	}		
-
-	func do(x){
-		var e = x * 5
-		var b = e * 6
-		var c = b * 7
-		var F = c * 1
-		var d = c * F
-		var ll = d * mul(d,e)
-		return ll
-	}
-	
-	func add(x ,k){
-		var z = k * x
-		return do(x) + mul(x,z)
-	}
-
-	func mul(a,b){
-		return a * b
-	}`,
-	},
 	{
 		Skip: false,
 		IO: []InOut{{
@@ -94,13 +45,13 @@ var TestPrograms = []TraceCorrectnessTest{
 		}},
 
 		Code: `
-func main(x){
+func main(x field)(field){
 	public{
 	x
 	}
 	return (x*fubunaci(7))
 }
-func fubunaci(a){
+func fubunaci(a field)(field){
 	if a==0{
 		return 1
 	}
@@ -246,33 +197,7 @@ func constraint(x){
 }
 
 `},
-	{
-		Skip: true,
-		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(3)), big.NewInt(int64(4))},
-		}},
-		Code: `
-func main(x,y){	
-	var multiply = func(b,h){
-		return b*h*6
-	}
-	var execute = func(j,m){
-		return j(m)
-	}
-	#var kk = x*7	
-	var k = execute(multiply,x) 
-	
-	return iterate(2,4,1,k)*y*x
-}
-	func iterate(fromX,toX,stepSize, call){       
-		if fromX==toX{           
-			return 1
-		}			
-		call(fromX)
-		return iterate(fromX+stepSize,toX,stepSize,call)
-		 
-	}	
-`},
+
 	{
 		Skip: true,
 		IO: []InOut{{
@@ -323,25 +248,6 @@ func fubunaci(a,v){
 	{
 		Skip: true,
 		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(3)), big.NewInt(int64(5)), big.NewInt(int64(7))},
-		}},
-
-		Code: `
-func main(x,y,z){
-	return mul(add(mul(x,y),z)-132,z)
-}
-
-func mul(a,b){
-    return a*b
-}
-func add(a,b){
-	return a+b
-	}
-
-`},
-	{
-		Skip: true,
-		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(3))},
 		}},
 
@@ -380,90 +286,8 @@ func fubunaci(a){
     return dyn[a-1]
 }
 `},
-	{
-		Skip: true,
-		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(3))},
-		}},
 
-		Code: `
-func main(x){
-	var a = func(i){
-		if i == 0 {
-			return
-		}
-		i = i-1
-		return x*a(i)			
-	}
-	var b = 7
-	var c = 123 * b    
-	 return mul(1/c,a(array[3]*2))
-}
-
-var xx = 4
-var array[] = {1,4,7,xx}
-
-func mul(a,b){
-    return a*b
-}
-`},
-	{
-		Skip: true,
-		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(3))},
-		}},
-		Code: `
-	func main(x){
-		var a = func(c,b){
-			return (c*c)*b
-		}
-		var c[] = {x, 2*x,a }
-		return a(applyFunction(c[0],a),x)
-	}
-
-	func applyFunction(a,fkt){
-		return fkt(a,a)
-	}
-`,
-	},
 	{Skip: true,
-		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(3)), big.NewInt(int64(2)), big.NewInt(328329)},
-		}},
-
-		Code: `
-	func main(x,z,w) {
-		if ( (4*7) == 28){
-			x=x*x
-		}else{
-			x=z*z
-		}
-		var arra[]={x,1,2,3}
-		var mul = func(a,b){
-			return x*b*7
-		}
-		var a =1
-		var c = w
-		
-		for( a<3;a=a+1){
-			var b = 3
-			for( b<4;b=b+2){
-				c = mul(c,c)
-			}				
-		}
-
-		#arra[2]=3
-		var k = mul(z,z)
-		var l = k*k
-		return l*(k*arra[2])*x*x
-	}
-
-	func mul(a,b){
-	return a*b
-	}
-	
-`,
-	}, {Skip: true,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(7)), big.NewInt(int64(11))},
 			Result: big.NewInt(int64(2160900)),
@@ -490,37 +314,5 @@ func mul(a,b){
 		return
 		}		
 `,
-	},
-	{
-		Skip: true,
-		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(7)), big.NewInt(int64(11))},
-			Result: big.NewInt(int64(2160900)),
-		}},
-
-		Code: `
-
-
-	func main( x  ,  z ) {
-		var a =1
-		var c = 45345146
-		for( a<3;a=a+1){
-			var b = 3
-			c = foo(x,c)*x
-			for( b<4;b=b+2){
-				c = foo(x,c)*x
-			}	
-			x = x*x+1
-		}
-		return
-	}	
-
-	func foo(x,y){
-		return x*y
-	}
-	
-	func fooX(x,y){
-		return x/y
-	}`,
 	},
 }

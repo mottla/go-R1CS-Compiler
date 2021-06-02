@@ -123,7 +123,7 @@ func (pf PolynomialField) DivFFT(a, b Poly) (Poly, Poly) {
 
 // Add adds two polinomials over the Finite Field
 func (pf PolynomialField) Add(a, b Poly) Poly {
-	r := ArrayOfBigZeros(maxInt(len(a), len(b)))
+	r := ArrayOfBigZeros(MaxInt(len(a), len(b)))
 	for i := 0; i < len(a); i++ {
 		r[i] = new(big.Int).Set(a[i])
 	}
@@ -135,7 +135,7 @@ func (pf PolynomialField) Add(a, b Poly) Poly {
 
 // Sub subtracts two polinomials over the Finite Field
 func (pf PolynomialField) Sub(a, b Poly) Poly {
-	r := ArrayOfBigZeros(maxInt(len(a), len(b)))
+	r := ArrayOfBigZeros(MaxInt(len(a), len(b)))
 	for i := 0; i < len(a); i++ {
 		r[i] = new(big.Int).Set(a[i])
 	}
