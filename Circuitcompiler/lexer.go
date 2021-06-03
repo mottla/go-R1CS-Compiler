@@ -38,16 +38,21 @@ func (ch Token) String() string {
 	}
 	return fmt.Sprintf("%v", ch.Type)
 }
-func (t Token) copy() Token {
-	return Token{
+func (t Token) copy() (r Token) {
+	r = Token{
 		Type:       t.Type,
 		Identifier: t.Identifier,
-		value:      new(big.Int).Set(t.value),
 		isArray:    t.isArray,
 		isArgument: t.isArgument,
 		dimensions: t.dimensions,
 		readInLine: t.readInLine,
 	}
+	if t.value == nil {
+		r.value = bigOne
+		return
+	}
+	r.value = t.value
+	return
 }
 func (t Token) equalDescription(a Token) bool {
 	return t.isArgument == a.isArgument && t.isArray == a.isArray && t.Identifier == a.Identifier && ArrayString(t.dimensions) == ArrayString(a.dimensions)
@@ -316,6 +321,8 @@ func (l *Lexer) Emit(t TokenType) {
 			Type:       t,
 			Identifier: l.Current(),
 			readInLine: l.currentLine,
+			//TODO safes space/time but could lead into trouble
+			value: bigOne,
 		}
 	}
 

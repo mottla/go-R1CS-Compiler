@@ -44,6 +44,16 @@ func (f Tokens) containsArgument() bool {
 	return false
 }
 
+func (f Token) Negate() (n Token) {
+	return f.CopyAndSetMultiplicative(new(big.Int).Neg(f.value))
+}
+func (f Tokens) Negate() (n Tokens) {
+	n = make(Tokens, len(f))
+	for i, v := range f {
+		n[i] = v.Negate()
+	}
+	return
+}
 func (t Token) toFactors() Tokens {
 	return Tokens{t}
 }
@@ -122,15 +132,15 @@ func mulFactors(leftFactors, rightFactors Tokens) (result Tokens) {
 }
 
 //adds two Tokens to one iff they are both are constants or of the same variable
-func add(leftFactors Tokens, a Token) {
+func (in *Tokens) Add(a Token) {
 
-	for i, v := range leftFactors {
+	for i, v := range *in {
 		if v.equalDescription(a) {
-			leftFactors[i].value = addType(v.value, a.value, a.Type)
+			(*in)[i].value = addType(v.value, a.value, a.Type)
 			return
 		}
 	}
-	leftFactors = append(leftFactors, a)
+	*in = append(*in, a)
 
 	return
 
@@ -138,13 +148,13 @@ func add(leftFactors Tokens, a Token) {
 
 //returns the reduced sum of two input factor arrays
 //if no reduction was done, it returns the concatenation of the input arrays
-func addFactors(leftFactors, rightFactors Tokens) Tokens {
+func (this Tokens) AddFactors(with Tokens) Tokens {
 
-	for _, facRight := range rightFactors {
-		add(leftFactors, facRight)
+	for _, facRight := range with {
+		this.Add(facRight)
 	}
 
-	return leftFactors
+	return this
 }
 
 func (from Tokens) primitiveReturnfunction() (gives *function) {
@@ -159,7 +169,7 @@ func (from Tokens) primitiveReturnfunction() (gives *function) {
 
 }
 
-//TODO add assertions
+//TODO Add assertions
 func combineFunctions(operation string, l, r, context *function, lc, rc *Constraint) (*function, *Constraint) {
 
 	rmp := NewCircuit("", context)

@@ -21,11 +21,11 @@ func (g *gateContainer) completeFunction(f Tokens) {
 
 	//if len f is 1, we can simpl
 	//todo single number call is outdated
-	if f == nil || len(f) == 0 || f.isSingleNumber() {
+	if f == nil || len(f) == 0 || !f.containsArgument() {
 		return
 	}
 	//if the function {..return x*1} , we dont introduce a new gate, as knowledge proof of a multiplication with 1 is trivial and not necessary
-	if len(f) == 1 && (f[0].multiplicative == nil || f[0].multiplicative.Cmp(bigOne) == 0) {
+	if len(f) == 1 && (f[0].value == nil || f[0].value.Cmp(bigOne) == 0) {
 		return
 	}
 	//the function returned but had a extracted constant
@@ -60,13 +60,13 @@ func (g *gateContainer) Add(gate *Gate) (id Token) {
 	}
 	var ty TokenType
 	if gate.rightIns != nil {
-		ty = gate.rightIns[0].Typ.Type
+		ty = gate.rightIns[0].Type
 	}
 	if gate.leftIns != nil {
-		ty |= gate.leftIns[0].Typ.Type
+		ty |= gate.leftIns[0].Type
 	}
 	if gate.outIns != nil {
-		ty |= gate.outIns[0].Typ.Type
+		ty |= gate.outIns[0].Type
 	}
 	return Token{
 		//todo note that thats bs

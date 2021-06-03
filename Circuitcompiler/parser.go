@@ -465,7 +465,7 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 			panic(fmt.Sprintf("cannot redeclare predefined function %s ", tokens[1].Identifier))
 		}
 		fkt := NewCircuit(tokens[1].Identifier, currentCircuit)
-		//we add the function
+		//we Add the function
 		currentCircuit.functions[fkt.Name] = fkt
 
 		p.Assert("(", tokens[2])
@@ -503,7 +503,7 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 		return
 	//case IF: //if a<b { }   if (a<b) {
 	//
-	//	//we add a constraint, its name references to the function body, its inputs hold the condition
+	//	//we Add a constraint, its name references to the function body, its inputs hold the condition
 	//	identifierLeadingToTheStatement := fmt.Sprintf("if%v", currentCircuit.taskStack.len())
 	//
 	//	ifFunction := NewCircuit(identifierLeadingToTheStatement, currentCircuit)
@@ -517,7 +517,7 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 	//			Identifier: identifierLeadingToTheStatement,
 	//		},
 	//	}
-	//	currentCircuit.taskStack.add(ifConstraint)
+	//	currentCircuit.taskStack.Add(ifConstraint)
 	//
 	//	var fk = func(t []Token) (condition, statement, rest []Token, success bool) {
 	//		condition, rest = splitAtFirstHighestStringType(t, "{")
@@ -573,7 +573,7 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 	//		//we are sure that there is no collision, because the name is sureley uneque
 	//		ifFunction.functions[identifierLeadingToTheStatement] = tsk
 	//
-	//		ifFunction.taskStack.add(ifConstraint)
+	//		ifFunction.taskStack.Add(ifConstraint)
 	//
 	//		p.PreCompile(tsk, v)
 	//	}

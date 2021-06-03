@@ -40,7 +40,7 @@ func (gate *Gate) setAndGetID() (id string) {
 	sort.Sort(gate.rightIns)
 	l := hashFactorsToBig(gate.leftIns)
 	r := hashFactorsToBig(gate.rightIns)
-	//we add the hashes of the multiplication part. a cheap way to consider the commutativity in the id creation to avoid duplicates such as a*b and b*a
+	//we Add the hashes of the multiplication part. a cheap way to consider the commutativity in the id creation to avoid duplicates such as a*b and b*a
 	lr := new(big.Int).Add(l, r)
 	sort.Sort(gate.outIns)
 	o := hashFactorsToBig(gate.outIns)
@@ -92,18 +92,16 @@ func divisionGate(a, b Tokens) (g *Gate) {
 
 // (1-id)* id = 0
 func zeroOrOneGate(id string) (g *Gate) {
-	one := factor{
-		Typ: Token{
-			Type: ARGUMENT,
-		},
-		multiplicative: bigOne,
+	one := Token{
+		Type:  ARGUMENT,
+		value: bigOne,
 	}
 
 	g = &Gate{
 		leftIns: Tokens{one,
 			Token{
 				Identifier: id,
-			}.toFactor().Negate(),
+			}.Negate(),
 		},
 		rightIns: Token{
 			Identifier: id,
@@ -115,18 +113,16 @@ func zeroOrOneGate(id string) (g *Gate) {
 
 // a xor b = c as arithmetic circuit (asserting that a,b \in {0,1}
 // 2a*b =  a + b - c
-func xorGate(a, b factor) (g *Gate) {
+func xorGate(a, b Token) (g *Gate) {
 
 	var mGate = new(Gate)
 	//some dangerous stuff is happening here.. check later dude
-	mGate.leftIns = Tokens{a.CopyAndSetMultiplicative(new(big.Int).Mul(a.multiplicative, big.NewInt(2)))}
+	mGate.leftIns = Tokens{a.CopyAndSetMultiplicative(new(big.Int).Mul(a.value, big.NewInt(2)))}
 	mGate.rightIns = Tokens{b}
-	mGate.outIns = addFactors(Tokens{a}, Tokens{b})
+	mGate.outIns = Tokens{a, b}
 
-	xor := factor{
-		Typ:            Token{Identifier: mGate.ID()},
-		multiplicative: bigOne,
-	}
+	xor := Token{Identifier: mGate.ID(), value: bigOne}
+
 	mGate.outIns = append(mGate.outIns, xor.Negate())
 
 	return mGate
@@ -134,18 +130,15 @@ func xorGate(a, b factor) (g *Gate) {
 
 // a or b = c as arithmetic circuit (asserting that a,b \in {0,1}
 // a*b =  a + b - c
-func orGate(a, b factor) (g *Gate) {
+func orGate(a, b Token) (g *Gate) {
 
 	var mGate = new(Gate)
 
 	mGate.leftIns = Tokens{a}
 	mGate.rightIns = Tokens{b}
-	mGate.outIns = addFactors(Tokens{a}, Tokens{b})
+	mGate.outIns = Tokens{a, b}
 
-	xor := factor{
-		Typ:            Token{Identifier: mGate.ID()},
-		multiplicative: bigOne,
-	}
+	xor := Token{Identifier: mGate.ID(), value: bigOne}
 	mGate.outIns = append(mGate.outIns, xor.Negate())
 
 	return mGate

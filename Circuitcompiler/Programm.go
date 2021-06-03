@@ -49,7 +49,7 @@ func (f bundle) fac() Tokens {
 //
 func (currentCircuit *function) compile(currentConstraint *Constraint, gateCollector *gateContainer) (returnBundle bundle, reachedReturn bool) {
 	if currentConstraint.Output.Type&Types != 0 {
-		return rets(currentConstraint.Output.toFactors(), nil), false
+		return currentConstraint.Output.toBundle(), false
 	}
 
 	switch currentConstraint.Output.Type {
@@ -218,7 +218,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	//			}
 	//			bund, _ = composed.execute(gateCollector)
 	//
-	//			return rets(addFactors(result, bund.fac()), nil), retu
+	//			return rets(AddFactors(result, bund.fac()), nil), retu
 	//		}
 	//		if isStat, isSat := currentCircuit.checkStaticCondition(task.Inputs[0]); isSat && isStat {
 	//
@@ -234,7 +234,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	//			}
 	//			bund, _ = composed.execute(gateCollector)
 	//
-	//			return rets(addFactors(result, bund.fac()), nil), retu
+	//			return rets(AddFactors(result, bund.fac()), nil), retu
 	//		} else if !isStat {
 	//
 	//			//the condition
@@ -253,7 +253,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	//					composed = combineFunctions("*", composed, negatedCondition, currentCircuit)
 	//				}
 	//				f, _ := composed.execute(gateCollector)
-	//				result = addFactors(result, f.fac())
+	//				result = AddFactors(result, f.fac())
 	//			}
 	//
 	//			//everything the statement returnes, must be multiplied with the condition
@@ -303,7 +303,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			rightFactors, _ := currentCircuit.compile(rightClone, gateCollector)
 			commonExtracted, extractedLeft, extractedRight := extractConstant(leftFactors.fac(), rightFactors.fac())
 
-			sGate := summationGate(addFactors(extractedLeft, extractedRight))
+			sGate := summationGate(extractedLeft.AddFactors(extractedRight))
 			id := gateCollector.Add(sGate)
 
 			fres := id.CopyAndSetMultiplicative(commonExtracted)
@@ -355,182 +355,182 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 
 	switch currentConstraint.Output.Type {
 
-	case BinaryComperatorToken:
-
-		switch currentConstraint.Output.Identifier {
-		case "==":
-			return rets(currentCircuit.equalityGate(currentConstraint, gateCollector), nil), false
-		case "!=":
-			fk := currentCircuit.equalityGate(currentConstraint, gateCollector)
-			return rets(addFactors(Token{
-				Type: DecimalNumberToken,
-			}.toFactors(), fk.Negate()), nil), false
-		case ">":
-
-			break
-		case ">=":
-
-			break
-		case "<":
-
-			break
-		case "<=":
-
-			break
-		default:
-
-		}
-
-		break
-	case BitOperatorToken:
-		left := currentConstraint.Inputs[0]
-		right := currentConstraint.Inputs[1]
-
-		var fkt = func(op string) (shift uint64) {
-			rightFactors, _ = currentCircuit.compile(right, gateCollector)
-			if !rightFactors.fac().isSingleNumber() {
-				panic("right side operand of" + op + " must be a compile-time constant")
-			}
-
-			if !rightFactors.fac()[0].multiplicative.IsUint64() {
-				panic("right side operand of " + op + " must be a Uint64")
-
-			}
-			N := utils.Field.ArithmeticField.Q.BitLen()
-			shift = rightFactors.fac()[0].multiplicative.Uint64()
-			if shift > uint64(N) {
-				panic("right side operand of " + op + " must be smaller then bit size of the underlying field")
-
-			}
-			return shift
-		}
-		switch currentConstraint.Output.Identifier {
-		case "<<":
-
-			_, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
-			shift := fkt("<<")
-			bitsScaled := []factor{}
-			//bit[0] is the lsb,
-			//if we left shift, we remove the leading bits, and add same number of zeros before the lsb
-			// 100011 << 3  becomes 100011000
-			for i := 0; i < len(bitsLeft)-int(shift); i++ {
-				tok := bitsLeft[i].CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)+uint(shift)))
-				bitsScaled = append(bitsScaled, tok)
-			}
-			out := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
-			//if we ever want to access the bits of this new derived expression
-			//we give back the bits we already computed
-			// var v = x<<3, v[3] = x[0]
-			for i := int(shift); i < len(bitsLeft)-int(shift); i++ {
-				currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[i-int(shift)].primitiveReturnfunction()
-			}
-			return rets(out.toFactors(), nil), false
-		case ">>":
-			_, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
-			shift := fkt(">>")
-			bitsScaled := []factor{}
-			//bit[0] is the lsb,
-			//if we left shift, we remove the leading bits, and add same number of zeros before the lsb
-			// 100011 >> 3  becomes 100
-			for i := int(shift); i < len(bitsLeft); i++ {
-				tok := bitsLeft[i].CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)-uint(shift)))
-
-				bitsScaled = append(bitsScaled, tok)
-			}
-			out := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
-			//if we ever want to access the bits of this new derived expression
-			//we give back the bits we already computed
-			// var v = x>>3, v[0] = x[3]
-			for i := 0; i < len(bitsLeft)-int(shift); i++ {
-				currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[i+int(shift)].primitiveReturnfunction()
-
-			}
-			return rets(out.toFactors(), nil), false
-		case ">>>":
-			_, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
-			shift := fkt(">>>")
-			bitsScaled := []factor{}
-			//bit[0] is the lsb,
-			//if we left shift, we remove the leading bits, and add same number of zeros before the lsb
-			// 100011 >>> 3  becomes 011100
-			for i := 0; i < len(bitsLeft); i++ {
-				tok := bitsLeft[i].CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(utils.Mod(i-int(shift), len(bitsLeft)))))
-
-				bitsScaled = append(bitsScaled, tok)
-			}
-			out := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
-			//if we ever want to access the bits of this new derived expression
-			//we give back the bits we already computed
-			// var v = x>>3, v[0] = x[3]
-			for i := 0; i < len(bitsLeft); i++ {
-				currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[utils.Mod(i+int(shift), len(bitsLeft))].primitiveReturnfunction()
-
-			}
-			return rets(out.toFactors(), nil), false
-		case "<<<":
-			_, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
-			shift := fkt("<<<")
-			bitsScaled := []factor{}
-			//bit[0] is the lsb,
-			//if we left shift, we remove the leading bits, and add same number of zeros before the lsb
-			// 100011 <<< 3  becomes 011100
-			for i := 0; i < len(bitsLeft); i++ {
-				tok := bitsLeft[i].CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(utils.Mod(i+int(shift), len(bitsLeft)))))
-
-				bitsScaled = append(bitsScaled, tok)
-			}
-			out := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
-			//if we ever want to access the bits of this new derived expression
-			//we give back the bits we already computed
-			for i := 0; i < len(bitsLeft); i++ {
-				currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[utils.Mod(i-int(shift), len(bitsLeft))].primitiveReturnfunction()
-
-			}
-			return rets(out.toFactors(), nil), false
-		case "^": //bitwise xor
-			_, _, xorIDs := currentCircuit.xor(currentConstraint, gateCollector)
-
-			bitsScaled := make(Tokens, len(xorIDs))
-			for i, v := range xorIDs {
-				bitsScaled[i] = v.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
-			}
-			eq := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
-
-			//say we split var x, from now on we can call x[i] to get the i'th bit
-			for i, v := range xorIDs {
-				currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
-			}
-			return rets(eq.toFactors(), nil), false
-		case "&": //bitwise and
-			_, _, andIDs := currentCircuit.and(currentConstraint, gateCollector)
-
-			bitsScaled := make(Tokens, len(andIDs))
-			for i, v := range andIDs {
-				bitsScaled[i] = v.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
-			}
-			eq := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
-
-			//say we split var x, from now on we can call x[i] to get the i'th bit
-			for i, v := range andIDs {
-				currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
-			}
-			return rets(eq.toFactors(), nil), false
-		case "|": //bitwise or
-			_, _, andIDs := currentCircuit.or(currentConstraint, gateCollector)
-
-			bitsScaled := make(Tokens, len(andIDs))
-			for i, v := range andIDs {
-				bitsScaled[i] = v.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
-			}
-			eq := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
-
-			//say we split var x, from now on we can call x[i] to get the i'th bit
-			for i, v := range andIDs {
-				currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
-			}
-			return rets(eq.toFactors(), nil), false
-		}
-		break
+	//case BinaryComperatorToken:
+	//
+	//	switch currentConstraint.Output.Identifier {
+	//	case "==":
+	//		return rets(currentCircuit.equalityGate(currentConstraint, gateCollector), nil), false
+	//	case "!=":
+	//		fk := currentCircuit.equalityGate(currentConstraint, gateCollector)
+	//		return rets(AddFactors(Token{
+	//			Type: DecimalNumberToken,
+	//		}.toFactors(), fk.Negate()), nil), false
+	//	case ">":
+	//
+	//		break
+	//	case ">=":
+	//
+	//		break
+	//	case "<":
+	//
+	//		break
+	//	case "<=":
+	//
+	//		break
+	//	default:
+	//
+	//	}
+	//
+	//	break
+	//case BitOperatorToken:
+	//	left := currentConstraint.Inputs[0]
+	//	right := currentConstraint.Inputs[1]
+	//
+	//	var fkt = func(op string) (shift uint64) {
+	//		rightFactors, _ = currentCircuit.compile(right, gateCollector)
+	//		if !rightFactors.fac().isSingleNumber() {
+	//			panic("right side operand of" + op + " must be a compile-time constant")
+	//		}
+	//
+	//		if !rightFactors.fac()[0].multiplicative.IsUint64() {
+	//			panic("right side operand of " + op + " must be a Uint64")
+	//
+	//		}
+	//		N := utils.Field.ArithmeticField.Q.BitLen()
+	//		shift = rightFactors.fac()[0].multiplicative.Uint64()
+	//		if shift > uint64(N) {
+	//			panic("right side operand of " + op + " must be smaller then bit size of the underlying field")
+	//
+	//		}
+	//		return shift
+	//	}
+	//	switch currentConstraint.Output.Identifier {
+	//	case "<<":
+	//
+	//		_, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
+	//		shift := fkt("<<")
+	//		bitsScaled := []factor{}
+	//		//bit[0] is the lsb,
+	//		//if we left shift, we remove the leading bits, and Add same number of zeros before the lsb
+	//		// 100011 << 3  becomes 100011000
+	//		for i := 0; i < len(bitsLeft)-int(shift); i++ {
+	//			tok := bitsLeft[i].CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)+uint(shift)))
+	//			bitsScaled = append(bitsScaled, tok)
+	//		}
+	//		out := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
+	//		//if we ever want to access the bits of this new derived expression
+	//		//we give back the bits we already computed
+	//		// var v = x<<3, v[3] = x[0]
+	//		for i := int(shift); i < len(bitsLeft)-int(shift); i++ {
+	//			currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[i-int(shift)].primitiveReturnfunction()
+	//		}
+	//		return rets(out.toFactors(), nil), false
+	//	case ">>":
+	//		_, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
+	//		shift := fkt(">>")
+	//		bitsScaled := []factor{}
+	//		//bit[0] is the lsb,
+	//		//if we left shift, we remove the leading bits, and Add same number of zeros before the lsb
+	//		// 100011 >> 3  becomes 100
+	//		for i := int(shift); i < len(bitsLeft); i++ {
+	//			tok := bitsLeft[i].CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)-uint(shift)))
+	//
+	//			bitsScaled = append(bitsScaled, tok)
+	//		}
+	//		out := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
+	//		//if we ever want to access the bits of this new derived expression
+	//		//we give back the bits we already computed
+	//		// var v = x>>3, v[0] = x[3]
+	//		for i := 0; i < len(bitsLeft)-int(shift); i++ {
+	//			currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[i+int(shift)].primitiveReturnfunction()
+	//
+	//		}
+	//		return rets(out.toFactors(), nil), false
+	//	case ">>>":
+	//		_, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
+	//		shift := fkt(">>>")
+	//		bitsScaled := []factor{}
+	//		//bit[0] is the lsb,
+	//		//if we left shift, we remove the leading bits, and Add same number of zeros before the lsb
+	//		// 100011 >>> 3  becomes 011100
+	//		for i := 0; i < len(bitsLeft); i++ {
+	//			tok := bitsLeft[i].CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(utils.Mod(i-int(shift), len(bitsLeft)))))
+	//
+	//			bitsScaled = append(bitsScaled, tok)
+	//		}
+	//		out := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
+	//		//if we ever want to access the bits of this new derived expression
+	//		//we give back the bits we already computed
+	//		// var v = x>>3, v[0] = x[3]
+	//		for i := 0; i < len(bitsLeft); i++ {
+	//			currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[utils.Mod(i+int(shift), len(bitsLeft))].primitiveReturnfunction()
+	//
+	//		}
+	//		return rets(out.toFactors(), nil), false
+	//	case "<<<":
+	//		_, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
+	//		shift := fkt("<<<")
+	//		bitsScaled := []factor{}
+	//		//bit[0] is the lsb,
+	//		//if we left shift, we remove the leading bits, and Add same number of zeros before the lsb
+	//		// 100011 <<< 3  becomes 011100
+	//		for i := 0; i < len(bitsLeft); i++ {
+	//			tok := bitsLeft[i].CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(utils.Mod(i+int(shift), len(bitsLeft)))))
+	//
+	//			bitsScaled = append(bitsScaled, tok)
+	//		}
+	//		out := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
+	//		//if we ever want to access the bits of this new derived expression
+	//		//we give back the bits we already computed
+	//		for i := 0; i < len(bitsLeft); i++ {
+	//			currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[utils.Mod(i-int(shift), len(bitsLeft))].primitiveReturnfunction()
+	//
+	//		}
+	//		return rets(out.toFactors(), nil), false
+	//	case "^": //bitwise xor
+	//		_, _, xorIDs := currentCircuit.xor(currentConstraint, gateCollector)
+	//
+	//		bitsScaled := make(Tokens, len(xorIDs))
+	//		for i, v := range xorIDs {
+	//			bitsScaled[i] = v.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
+	//		}
+	//		eq := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
+	//
+	//		//say we split var x, from now on we can call x[i] to get the i'th bit
+	//		for i, v := range xorIDs {
+	//			currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
+	//		}
+	//		return rets(eq.toFactors(), nil), false
+	//	case "&": //bitwise and
+	//		_, _, andIDs := currentCircuit.and(currentConstraint, gateCollector)
+	//
+	//		bitsScaled := make(Tokens, len(andIDs))
+	//		for i, v := range andIDs {
+	//			bitsScaled[i] = v.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
+	//		}
+	//		eq := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
+	//
+	//		//say we split var x, from now on we can call x[i] to get the i'th bit
+	//		for i, v := range andIDs {
+	//			currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
+	//		}
+	//		return rets(eq.toFactors(), nil), false
+	//	case "|": //bitwise or
+	//		_, _, andIDs := currentCircuit.or(currentConstraint, gateCollector)
+	//
+	//		bitsScaled := make(Tokens, len(andIDs))
+	//		for i, v := range andIDs {
+	//			bitsScaled[i] = v.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
+	//		}
+	//		eq := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
+	//
+	//		//say we split var x, from now on we can call x[i] to get the i'th bit
+	//		for i, v := range andIDs {
+	//			currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
+	//		}
+	//		return rets(eq.toFactors(), nil), false
+	//	}
+	//	break
 	case BooleanOperatorToken:
 		break
 	case ArithmeticOperatorToken:
@@ -550,102 +550,93 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			}
 			commonFactor, newLeft, newRight := extractConstant(leftFactors.fac(), rightFactors.fac())
 			mGate := multiplicationGate(newLeft, newRight)
-			nTok := gateCollector.Add(mGate)
+			nTok := gateCollector.Add(mGate).CopyAndSetMultiplicative(commonFactor)
 
-			f := factor{Typ: nTok, multiplicative: commonFactor}
-			return rets(Tokens{f}, nil), currentConstraint.Output.Type == RETURN
-		case "/":
-			//a / b
-			leftFactors, _ = currentCircuit.compile(left, gateCollector)
-			rightFactors, _ = currentCircuit.compile(right, gateCollector)
-
-			if len(leftFactors) != 1 || len(rightFactors) != 1 {
-				panic("")
-			}
-
-			if !rightFactors[0].facs.containsArgument() { // (x1+x2..)/6
-				return rets(mulFactors(leftFactors.fac(), invertFactors(rightFactors.fac())), nil), currentConstraint.Output.Type == RETURN
-			}
-
-			gcdl, facL := factorSignature(leftFactors.fac())
-			gcdR, facR := factorSignature(rightFactors.fac())
-			//TODO is this a good idea?
-			commonF := utils.Field.ArithmeticField.Div(gcdl, gcdR)
-
-			//inverse gate enforces the input to be non zero
-			//eg. b*b^-1 = 1
-			var inversB = inverseGate(facR)
-			var g = divisionGate(facL, facR)
-
-			gateCollector.Add(inversB)
-			nTok := gateCollector.Add(g)
-
-			f := factor{Typ: nTok, multiplicative: commonF}
-			return rets(Tokens{f}, nil), currentConstraint.Output.Type == RETURN
-		case "**":
-			//apply a fixed exponent exponentiation using a simple square and multiply method
-			leftFactors, _ = currentCircuit.compile(left, gateCollector)
-			rightFactors, _ = currentCircuit.compile(right, gateCollector)
-			if len(leftFactors) != 1 || len(rightFactors) != 1 {
-				panic("")
-			}
-
-			if rightFactors[0].facs.containsArgument() { // (x1+x2..)/6
-				panic("exponent must be a compile time constant")
-			}
-			if rightFactors.fac()[0].multiplicative.Sign() == -1 {
-				rightFactors.fac()[0].multiplicative = utils.Field.ArithmeticField.Affine(rightFactors.fac()[0].multiplicative)
-			}
-			processedExponent := new(big.Int).Set(rightFactors.fac()[0].multiplicative)
-
-			base := leftFactors.fac().clone()
-			result := Token{Type: DecimalNumberToken}.toFactors()
-			//TODO use Yao's method instead.
-			for ; processedExponent.Cmp(bigOne) == 1; processedExponent.Rsh(processedExponent, 1) {
-
-				if processedExponent.Bit(0) == 0 {
-					square := gateCollector.Add(multiplicationGate(base, base))
-					base = square.toFactors()
-				} else {
-					if result.isSingleNumber() {
-						result = mulFactors(result, base)
-					} else {
-						y := gateCollector.Add(multiplicationGate(result, base))
-						result = y.toFactors()
-					}
-
-					square := gateCollector.Add(multiplicationGate(base, base))
-					base = square.toFactors()
-				}
-
-			}
-			if result.isSingleNumber() {
-				return rets(mulFactors(result, base), nil), false
-			}
-			combine := gateCollector.Add(multiplicationGate(result, base))
-			result = combine.toFactors()
-			return rets(result, nil), false
+			return nTok.toBundle(), currentConstraint.Output.Type == RETURN
+		//case "/":
+		//	//a / b
+		//	leftFactors, _ = currentCircuit.compile(left, gateCollector)
+		//	rightFactors, _ = currentCircuit.compile(right, gateCollector)
+		//
+		//	if len(leftFactors) != 1 || len(rightFactors) != 1 {
+		//		panic("")
+		//	}
+		//
+		//	if !rightFactors[0].facs.containsArgument() { // (x1+x2..)/6
+		//		return rets(mulFactors(leftFactors.fac(), invertFactors(rightFactors.fac())), nil), currentConstraint.Output.Type == RETURN
+		//	}
+		//
+		//	gcdl, facL := factorSignature(leftFactors.fac())
+		//	gcdR, facR := factorSignature(rightFactors.fac())
+		//	//TODO is this a good idea?
+		//	commonF := utils.Field.ArithmeticField.Div(gcdl, gcdR)
+		//
+		//	//inverse gate enforces the input to be non zero
+		//	//eg. b*b^-1 = 1
+		//	var inversB = inverseGate(facR)
+		//	var g = divisionGate(facL, facR)
+		//
+		//	gateCollector.Add(inversB)
+		//	nTok := gateCollector.Add(g)
+		//
+		//	f := factor{Typ: nTok, multiplicative: commonF}
+		//	return rets(Tokens{f}, nil), currentConstraint.Output.Type == RETURN
+		//case "**":
+		//	//apply a fixed exponent exponentiation using a simple square and multiply method
+		//	leftFactors, _ = currentCircuit.compile(left, gateCollector)
+		//	rightFactors, _ = currentCircuit.compile(right, gateCollector)
+		//	if len(leftFactors) != 1 || len(rightFactors) != 1 {
+		//		panic("")
+		//	}
+		//
+		//	if rightFactors[0].facs.containsArgument() { // (x1+x2..)/6
+		//		panic("exponent must be a compile time constant")
+		//	}
+		//	if rightFactors.fac()[0].multiplicative.Sign() == -1 {
+		//		rightFactors.fac()[0].multiplicative = utils.Field.ArithmeticField.Affine(rightFactors.fac()[0].multiplicative)
+		//	}
+		//	processedExponent := new(big.Int).Set(rightFactors.fac()[0].multiplicative)
+		//
+		//	base := leftFactors.fac().clone()
+		//	result := Token{Type: DecimalNumberToken}.toFactors()
+		//	//TODO use Yao's method instead.
+		//	for ; processedExponent.Cmp(bigOne) == 1; processedExponent.Rsh(processedExponent, 1) {
+		//
+		//		if processedExponent.Bit(0) == 0 {
+		//			square := gateCollector.Add(multiplicationGate(base, base))
+		//			base = square.toFactors()
+		//		} else {
+		//			if result.isSingleNumber() {
+		//				result = mulFactors(result, base)
+		//			} else {
+		//				y := gateCollector.Add(multiplicationGate(result, base))
+		//				result = y.toFactors()
+		//			}
+		//
+		//			square := gateCollector.Add(multiplicationGate(base, base))
+		//			base = square.toFactors()
+		//		}
+		//
+		//	}
+		//	if result.isSingleNumber() {
+		//		return rets(mulFactors(result, base), nil), false
+		//	}
+		//	combine := gateCollector.Add(multiplicationGate(result, base))
+		//	result = combine.toFactors()
+		//	return rets(result, nil), false
 
 		case "+":
 			leftFactors, _ = currentCircuit.compile(left, gateCollector)
 			rightFactors, _ = currentCircuit.compile(right, gateCollector)
-			if len(leftFactors) != 1 || len(rightFactors) != 1 {
-				panic("")
-			}
-
-			addedFactors := addFactors(leftFactors.fac(), rightFactors.fac())
+			addedFactors := leftFactors.fac().AddFactors(rightFactors.fac())
 			return rets(addedFactors, nil), currentConstraint.Output.Type == RETURN
 
-		case "-":
-			leftFactors, _ = currentCircuit.compile(left, gateCollector)
-			rightFactors, _ = currentCircuit.compile(right, gateCollector)
-			if len(leftFactors) != 1 || len(rightFactors) != 1 {
-				panic("")
-			}
-
-			rf := negateFactors(rightFactors.fac())
-			addedFactors := addFactors(leftFactors.fac(), rf)
-			return rets(addedFactors, nil), currentConstraint.Output.Type == RETURN
+			//case "-":
+			//	leftFactors, _ = currentCircuit.compile(left, gateCollector)
+			//	rightFactors, _ = currentCircuit.compile(right, gateCollector)
+			//	rf := negateFactors(rightFactors.fac())
+			//	addedFactors := AddFactors(leftFactors.fac(), rf)
+			//	return rets(addedFactors, nil), currentConstraint.Output.Type == RETURN
 		}
 		break
 	case AssignmentOperatorToken:
@@ -657,18 +648,18 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	panic(currentConstraint)
 }
 
-func (currentCircuit *function) SPLIT(makeTheBitsAvailableInCurrentCircuit bool, toSplit *Constraint, gateCollector *gateContainer) (arg Token, bits []factor) {
+func (currentCircuit *function) SPLIT(makeTheBitsAvailableInCurrentCircuit bool, toSplit *Constraint, gateCollector *gateContainer) (arg Token, bits Tokens) {
 
 	in, _ := currentCircuit.compile(toSplit, gateCollector)
 	if len(in.fac()) > 1 {
 		tok := gateCollector.Add(summationGate(in.fac()))
 		return tok, split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, tok)
 	}
-	if in.fac().isSingleNumber() {
-		fmt.Println("you really wanna split a constant number into its bits? ")
-	}
+	//if in.fac().isSingleNumber() {
+	//	fmt.Println("you really wanna split a constant number into its bits? ")
+	//}
 	//if say : Split(5*x), then we need to introduce the constant multiplication gate. even if its stupid..
-	if in.fac()[0].multiplicative.Cmp(bigOne) != 0 {
+	if in.fac()[0].value.Cmp(bigOne) != 0 {
 		one := Token{
 			Type: DecimalNumberToken,
 		}.toFactors()
@@ -677,10 +668,10 @@ func (currentCircuit *function) SPLIT(makeTheBitsAvailableInCurrentCircuit bool,
 		return tok, split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, tok)
 	}
 
-	return in.fac()[0].Typ, split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, in.fac()[0].Typ)
+	return in.fac()[0], split(makeTheBitsAvailableInCurrentCircuit, currentCircuit, gateCollector, in.fac()[0])
 }
 
-func split(makeTheBitsAvailableInCurrentCircuit bool, currentCircuit *function, gateCollector *gateContainer, arg Token) (bits []factor) {
+func split(makeTheBitsAvailableInCurrentCircuit bool, currentCircuit *function, gateCollector *gateContainer, arg Token) (bits Tokens) {
 	N := utils.Field.ArithmeticField.Q.BitLen()
 
 	//we create N new R1CS elements Z_i. 			//
@@ -688,8 +679,8 @@ func split(makeTheBitsAvailableInCurrentCircuit bool, currentCircuit *function, 
 	//each Z_i is introduced by a constraint  (Z_i - 1 ) * Z_i = 0, to ensure its either 0 or 1
 	// Z_0 is the lsb
 
-	bitsScaled := make([]factor, N)
-	bits = make([]factor, N)
+	bitsScaled := make(Tokens, N)
+	bits = make(Tokens, N)
 	for i := N - 1; i >= 0; i-- {
 
 		nTok := Token{
@@ -709,22 +700,18 @@ func split(makeTheBitsAvailableInCurrentCircuit bool, currentCircuit *function, 
 			}
 		}
 
-		bitsScaled[i] =
-			factor{
-				Typ:            bit,
-				multiplicative: new(big.Int).Lsh(bigOne, uint(i)),
-			}
+		bitsScaled[i] = bit.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
 
-		bits[i] = bit.toFactor()
+		bits[i] = bit
 		//say we split var x, from now on we can call x[i] to get the i'th bit
 		if makeTheBitsAvailableInCurrentCircuit {
 			currentCircuit.functions[nTok.Identifier] = bit.primitiveReturnfunction()
 		}
 
-		// we need to add the bits during precompilations so we can access them like from an array
+		// we need to Add the bits during precompilations so we can access them like from an array
 		//	currentCircuit.constraintMap
 	}
-	//add the bits constraint \bits Z_i 2^i = Z to ensure that the Zi are the bit representation of Z
+	//Add the bits constraint \bits Z_i 2^i = Z to ensure that the Zi are the bit representation of Z
 
 	//cConstraint[indexMap[g.value.identifier.identifier]] = g.extractedConstants
 	eq := equalityGate(bitsScaled, arg.toFactors())
@@ -732,8 +719,8 @@ func split(makeTheBitsAvailableInCurrentCircuit bool, currentCircuit *function, 
 		if set.IsSet(indexMap[arg.Identifier]) {
 			for i, bit := range bits {
 				b := int64((*witness)[indexMap[arg.Identifier]].Bit(i))
-				(*witness)[indexMap[bit.Typ.Identifier]] = big.NewInt(b)
-				set.Set(indexMap[bit.Typ.Identifier])
+				(*witness)[indexMap[bit.Identifier]] = big.NewInt(b)
+				set.Set(indexMap[bit.Identifier])
 			}
 			return true
 		}
@@ -755,7 +742,7 @@ func (currentCircuit *function) xor(currentConstraint *Constraint, gateCollector
 	for i := len(bitsLeft) - 1; i >= 0; i-- {
 		// a xor b = c as arithmetic circuit (asserting that a,b \in {0,1}
 		// 2a*b = c + a + b - 1
-		xorIDs[i] = gateCollector.Add(xorGate(bitsLeft[i], bitsRight[i])).toFactor()
+		xorIDs[i] = gateCollector.Add(xorGate(bitsLeft[i], bitsRight[i]))
 	}
 	return argLeft, argRight, xorIDs
 }
@@ -771,7 +758,7 @@ func (currentCircuit *function) and(currentConstraint *Constraint, gateCollector
 
 	for i := len(bitsLeft) - 1; i >= 0; i-- {
 		//a*b = c
-		andIDs[i] = gateCollector.Add(multiplicationGate(bitsLeft[i].toFactors(), bitsRight[i].toFactors())).toFactor()
+		andIDs[i] = gateCollector.Add(multiplicationGate(bitsLeft[i].toFactors(), bitsRight[i].toFactors()))
 	}
 	return argLeft, argRight, andIDs
 }
@@ -786,7 +773,7 @@ func (currentCircuit *function) or(currentConstraint *Constraint, gateCollector 
 
 	for i := len(bitsLeft) - 1; i >= 0; i-- {
 		//ab = -c + a + b
-		orIds[i] = gateCollector.Add(orGate(bitsLeft[i], bitsRight[i])).toFactor()
+		orIds[i] = gateCollector.Add(orGate(bitsLeft[i], bitsRight[i]))
 	}
 	return argLeft, argRight, orIds
 }
@@ -834,8 +821,9 @@ func (currentCircuit *function) equalityGate(currentConstraint *Constraint, gate
 	c3.noNewOutput = true
 
 	c3.outIns = Tokens{Token{
-		Type: DecimalNumberToken,
-	}.toFactor(), c1.toFactor().Negate()}
+		Type:  DecimalNumberToken,
+		value: bigOne,
+	}, c1.Negate()}
 
 	c3.rightIns = inverseSumtherm.toFactors()
 	gateCollector.Add(c3)
@@ -844,7 +832,7 @@ func (currentCircuit *function) equalityGate(currentConstraint *Constraint, gate
 
 //constants, which have been excluded get added to the constraints at the end
 //for example: given a expression x*z*23, will only create a constraint where x*z is multiplied
-//this increases the chance, of beiing abe to reuse the constrain if for example x*z*24 is called, we use the ouput of x*z and thereby safe a multiplication gate
+//this increases the chance to reuse the constrain if for example x*z*24 is called, we use the output of x*z and thereby safe a multiplication gate
 
 type MultiplicationGateSignature struct {
 	identifier      Token
@@ -874,7 +862,7 @@ func (in InputArgument) String() string {
 }
 
 func CombineInputs(abstract []string, concrete []*big.Int) (res []InputArgument) {
-	//we add the neutral element here
+	//we Add the neutral element here
 
 	if len(abstract) != len(concrete) {
 		panic(fmt.Sprintf("argument missmatch, programm requires %v inputs, you provided %v", len(abstract), len(concrete)))
@@ -925,7 +913,7 @@ func (p *Program) GatesToR1CS(mGates []*Gate) (r1CS *R1CS) {
 	indexMap := make(map[string]int)
 	r1CS.indexMap = indexMap
 
-	//first we add the public inputs
+	//first we Add the public inputs
 	for _, v := range p.PublicInputs {
 		indexMap[v] = len(indexMap)
 	}
@@ -955,21 +943,21 @@ func (p *Program) GatesToR1CS(mGates []*Gate) (r1CS *R1CS) {
 
 	}
 
-	insertValue := func(val factor, arr []*big.Int) {
+	insertValue := func(val Token, arr []*big.Int) {
 		//if val.Typ.Type == DecimalNumberToken {
 		//	arr[0] = val.multiplicative
 		//	return
 		//}
-		if val.Typ.Identifier == "" {
-			arr[0] = val.multiplicative
+		if val.Identifier == "" {
+			arr[0] = val.value
 			return
 		}
-		index, ex := indexMap[val.Typ.Identifier]
+		index, ex := indexMap[val.Identifier]
 		if !ex {
 			panic(fmt.Sprintf("%v index not found!!!", val))
 		}
-		if val.multiplicative != nil {
-			arr[index] = val.multiplicative
+		if val.value != nil {
+			arr[index] = val.value
 			return
 		}
 		arr[index] = bigOne
