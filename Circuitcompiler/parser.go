@@ -120,7 +120,11 @@ func (p *Parser) parseExpression(stack []Token, inFkt *function, inConstr *Const
 		lfkt, lc := p.parseExpression(l, NewCircuit("", inFkt.Context), &Constraint{})
 		rfkt, rc := p.parseExpression(r, NewCircuit("", inFkt.Context), &Constraint{})
 
-		return combineFunctions(binOperation.Identifier, lfkt, rfkt, inFkt.Context, lc, rc)
+		if eq, err := lfkt.hasEqualDescription(rfkt); !eq {
+			p.error(err)
+		}
+
+		return combineFunctions(binOperation, lfkt, rfkt, &function{}), combineConstraints(binOperation.Identifier, lc, rc)
 
 	} else if binOperation.Type != 0 {
 		p.error("unsuported operation %v", binOperation)
@@ -426,20 +430,30 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 
 	switch tokens[0].Type {
 	case PUBLIC:
-		//toks := Tokens{toks: tokens[1:]}
-		//tok := toks.next()
-		//if tok.Identifier != "{" {
-		//	p.error("define publics via: 'public {a,b,c}' , got %v ", tok)
-		//}
-		////NOTE THAT WE GOT ERROR WHEN USING &Constraint{} instead of Constraint{}, dont understand why
-		//buffer := Constraint{}
-		//
-		//rest := p.parseArguments(currentCircuit, toks.toks, splitAtClosingSwingBrackets, &buffer)
-		//for _, publicInput := range buffer.Inputs {
-		//	a := currentCircuit.resolveArrayName(publicInput.Output.Identifier, publicInput.Inputs)
-		//	currentCircuit.SNARK_Public_Statement = append(currentCircuit.SNARK_Public_Statement, a)
-		//}
-		//p.PreCompile(currentCircuit, rest)
+
+		if tokens[1].Identifier != "{" {
+			p.error("define publics via: 'public {a,b,c}'")
+		}
+		inside, rest, success := splitAtClosingSwingBrackets(tokens[1:])
+		if !success {
+			panic("closing brackets missing")
+		}
+		for arguments, remm := splitAtFirstHighestStringType(inside, ","); ; arguments, remm = splitAtFirstHighestStringType(remm, ",") {
+			arguments = removeLeadingAndTrailingBreaks(arguments)
+			//todo array overload
+			p.AssertTypes(arguments, IDENTIFIER_VARIABLE)
+			//the first input is the thing to overwrite
+			_, ex := currentCircuit.findFunctionInBloodline(arguments[0].Identifier)
+			if !ex {
+				p.error(fmt.Sprintf("variable %s not declared", arguments[0].Identifier))
+			}
+			currentCircuit.SNARK_Public_Statement = append(currentCircuit.SNARK_Public_Statement, arguments[0].Identifier)
+			if remm == nil {
+				break
+			}
+		}
+
+		p.PreCompile(currentCircuit, rest)
 	case IMPORT:
 		//if len(tokens) == 1 || tokens[1].Type != IDENTIFIER_VARIABLE {
 		//	p.error("import failed")
@@ -490,9 +504,9 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 		//check if the returns match the header description
 
 		ex, v := fkt.taskStack.PeekLast()
-		fktReturns := ex && v.Output.Type == RETURN
+		lastTaskIsReturn := ex && v.Output.Type == RETURN
 
-		if len(fkt.OutputTypes) != 0 && !fktReturns {
+		if len(fkt.OutputTypes) != 0 && !lastTaskIsReturn {
 			p.error("return missing")
 		}
 		b, err := fkt.checkIfReturnsMatchHeader(v.FktInputs)
@@ -501,84 +515,97 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 		}
 
 		return
-	//case IF: //if a<b { }   if (a<b) {
-	//
-	//	//we Add a constraint, its name references to the function body, its inputs hold the condition
-	//	identifierLeadingToTheStatement := fmt.Sprintf("if%v", currentCircuit.taskStack.len())
-	//
-	//	ifFunction := NewCircuit(identifierLeadingToTheStatement, currentCircuit)
-	//
-	//	//we are sure that there is no collision, because the name is sureley uneque
-	//	currentCircuit.functions[identifierLeadingToTheStatement] = ifFunction
-	//
-	//	ifConstraint := &Constraint{
-	//		Output: Token{
-	//			Type:       IF_FUNCTION_CALL,
-	//			Identifier: identifierLeadingToTheStatement,
-	//		},
-	//	}
-	//	currentCircuit.taskStack.Add(ifConstraint)
-	//
-	//	var fk = func(t []Token) (condition, statement, rest []Token, success bool) {
-	//		condition, rest = splitAtFirstHighestStringType(t, "{")
-	//		statement, rest, success = splitAtClosingSwingBrackets(rest)
-	//		if !success {
-	//			panic("")
-	//		}
-	//		if removeLeadingBreaks(rest)[0].Type != ELSE {
-	//			return condition, statement, rest, false
-	//		}
-	//		return
-	//	}
-	//
-	//	statements := [][]Token{}
-	//	conditions := [][]Token{}
-	//	c, s, r, contin := fk(tokens)
-	//	for ; ; c, s, r, contin = fk(r) {
-	//		statements = append(statements, s)
-	//		conditions = append(conditions, c)
-	//		if !contin {
-	//			break
-	//		}
-	//	}
-	//
-	//	p.PreCompile(currentCircuit, r)
-	//	for i, v := range statements {
-	//		identifierLeadingToTheStatement := fmt.Sprintf("ifStatmement%v", ifFunction.taskStack.len())
-	//		ifConstraint := &Constraint{
-	//			Output: Token{
-	//				Type:       IF,
-	//				Identifier: identifierLeadingToTheStatement,
-	//			},
-	//		}
-	//		if i == 0 {
-	//			p.AssertTypes(conditions[i], IF)
-	//			ifConstraint.FktInputs = append(ifConstraint.FktInputs, p.parseExpression(conditions[0][1:], NewCircuit("", currentCircuit)))
-	//		} else if i < len(statements)-1 {
-	//			p.AssertTypes(conditions[i], ELSE, IF)
-	//			ifConstraint.FktInputs = append(ifConstraint.FktInputs, p.parseExpression(conditions[i][2:], NewCircuit("", currentCircuit)))
-	//		} else {
-	//			if len(conditions[i]) > 1 {
-	//				p.AssertTypes(conditions[i], ELSE, IF)
-	//				ifConstraint.FktInputs = append(ifConstraint.FktInputs, p.parseExpression(conditions[i][2:], NewCircuit("", currentCircuit)))
-	//			} else {
-	//				p.AssertTypes(conditions[i], ELSE)
-	//				ifConstraint.Output.Type = ELSE
-	//				//no condition
-	//			}
-	//		}
-	//
-	//		tsk := NewCircuit(identifierLeadingToTheStatement, currentCircuit)
-	//
-	//		//we are sure that there is no collision, because the name is sureley uneque
-	//		ifFunction.functions[identifierLeadingToTheStatement] = tsk
-	//
-	//		ifFunction.taskStack.Add(ifConstraint)
-	//
-	//		p.PreCompile(tsk, v)
-	//	}
-	//
-	//	return
+	case IF: //if a<b { }   if (a<b) {
+
+		ifFunction := NewCircuit("", currentCircuit)
+
+		ifConstraint := &Constraint{
+			Output: Token{
+				Type: IF_FUNCTION_CALL,
+			},
+			FktInputs: []*function{ifFunction},
+		}
+		currentCircuit.taskStack.add(ifConstraint)
+
+		var fk = func(t []Token) (condition, statement, rest []Token, success bool) {
+			condition, rest = splitAtFirstHighestStringType(t, "{")
+			statement, rest, success = splitAtClosingSwingBrackets(rest)
+			if !success {
+				panic("")
+			}
+			if removeLeadingBreaks(rest)[0].Type != ELSE {
+				return condition, statement, rest, false
+			}
+			return
+		}
+
+		statements := [][]Token{}
+		conditions := [][]Token{}
+		c, s, afterIFElse, contin := fk(tokens)
+		for ; ; c, s, afterIFElse, contin = fk(afterIFElse) {
+			statements = append(statements, s)
+			conditions = append(conditions, c)
+			if !contin {
+				break
+			}
+		}
+
+		p.PreCompile(currentCircuit, afterIFElse)
+		for i, statement := range statements {
+
+			tsk := NewCircuit("", currentCircuit)
+			ifConstraint := &Constraint{
+				Output: Token{
+					Type: IF,
+				},
+				FktInputs: []*function{tsk},
+			}
+			if i == 0 {
+				p.AssertTypes(conditions[i], IF)
+				f, c := p.parseExpression(conditions[0][1:], NewCircuit("", currentCircuit), &Constraint{})
+				if b, err := f.HasBooleanOutput(); !b {
+					p.error(err)
+				}
+				ifConstraint.Inputs = append(ifConstraint.Inputs, c)
+			} else if i < len(statements)-1 {
+				p.AssertTypes(conditions[i], ELSE, IF)
+				f, c := p.parseExpression(conditions[i][2:], NewCircuit("", currentCircuit), &Constraint{})
+				if b, err := f.HasBooleanOutput(); !b {
+					p.error(err)
+				}
+				ifConstraint.Inputs = append(ifConstraint.Inputs, c)
+			} else {
+				if len(conditions[i]) > 1 {
+					p.AssertTypes(conditions[i], ELSE, IF)
+					f, c := p.parseExpression(conditions[i][2:], NewCircuit("", currentCircuit), &Constraint{})
+					if b, err := f.HasBooleanOutput(); !b {
+						p.error(err)
+					}
+					ifConstraint.Inputs = append(ifConstraint.Inputs, c)
+				} else {
+					p.AssertTypes(conditions[i], ELSE)
+					ifConstraint.Output.Type = ELSE
+					//no condition
+				}
+			}
+
+			ifFunction.taskStack.add(ifConstraint)
+
+			p.PreCompile(tsk, statement)
+
+			ex, v := tsk.taskStack.PeekLast()
+			lastTaskIsReturn := ex && v.Output.Type == RETURN
+
+			if lastTaskIsReturn {
+				b, err := currentCircuit.checkIfReturnsMatchHeader(v.FktInputs)
+				if !b {
+					panic(err)
+				}
+			}
+
+		}
+
+		return
 	case FOR:
 		// TODO for loops a just syntactic suggar for a recursive function
 
@@ -727,7 +754,7 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 		return
 
 	default:
-		p.error("%v", tokens)
+		p.error("%statement", tokens)
 	}
 	return
 }

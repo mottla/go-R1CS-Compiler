@@ -18,8 +18,8 @@ type function struct {
 	OutputTypes            []returnTypes
 
 	//parent function. this function inherits all functions wich are accessible from his anchestors. Recent overload Late
-	Context *function
-
+	Context              *function
+	skipLoadVerification bool //predeclared functions
 	//this are the functions, that are defined within this function
 	functions map[string]*function
 
@@ -34,7 +34,7 @@ type returnTypes struct {
 }
 
 func (r returnTypes) String() string {
-	return fmt.Sprintf("%v%v", r.fkt.description(), r.typ)
+	return fmt.Sprintf("%v%v", r.fkt.description(), r.typ.getType())
 }
 
 func NewCircuit(name string, context *function) *function {
@@ -85,6 +85,22 @@ func (v *function) outputs() []returnTypes {
 			fkt:            v}}
 	}
 	return v.OutputTypes
+}
+
+func (f *function) HasBooleanOutput() (answer bool, error string) {
+
+	if len(f.OutputTypes) != 1 {
+		return false, "bool-output type function in if-else condition expected"
+	}
+
+	return f.OutputTypes[0].compare(returnTypes{
+		functionReturn: false,
+		fkt:            nil,
+		typ: Token{
+			Type: BOOL,
+		},
+	})
+
 }
 
 func (f *function) checkIfReturnsMatchHeader(thenThese []*function) (answer bool, error string) {
@@ -164,7 +180,7 @@ func (circ *function) flatCopy() (clone *function) {
 	}
 	clone = NewCircuit(circ.Name, circ.Context)
 	argumentIdentifiers := make([]string, len(circ.InputIdentifiers))
-
+	clone.skipLoadVerification = circ.skipLoadVerification
 	copy(argumentIdentifiers, circ.InputIdentifiers)
 	clone.InputIdentifiers = argumentIdentifiers
 
@@ -194,19 +210,19 @@ func (currentCircuit *function) checkStaticCondition(c *Constraint) (isStatic, i
 	var factorsA, factorsB bundle
 	var A, B *big.Int
 
-	factorsA, _ = currentCircuit.compile(c.Inputs[1], newGateContainer())
+	factorsA, _ = currentCircuit.compile(c.Inputs[0], newGateContainer())
 	if factorsA.fac().containsArgument() {
 		return false, false
 
 	}
-	factorsB, _ = currentCircuit.compile(c.Inputs[2], newGateContainer())
+	factorsB, _ = currentCircuit.compile(c.Inputs[1], newGateContainer())
 	if factorsB.fac().containsArgument() {
 		return false, false
 	}
 	A = factorsA.fac()[0].value
 	B = factorsB.fac()[0].value
 
-	switch c.Inputs[0].Output.Identifier {
+	switch c.Output.Identifier {
 	case "==":
 		if A.Cmp(B) != 0 {
 			return true, false
@@ -326,30 +342,30 @@ func (currentCircuit *function) getFunctionInputs() (oldInputs []*function) {
 
 func (currentCircuit *function) getsLoadedWith(newInputs []*function) {
 
-	if len(currentCircuit.InputTypes) < len(newInputs) {
-		panic(fmt.Sprintf("%v takes %v arguments, got %v", currentCircuit.Name, len(currentCircuit.InputIdentifiers), len(newInputs)))
-	}
-	for i := 0; i < len(newInputs); i++ {
-		out := newInputs[i].outputs()
-		if len(out) != 1 {
-			//a()-> x,y
-			//so we dont allos foo( a()), even when foo takes two arguments. should we stay with go syntax?
-			panic("")
+	if !currentCircuit.skipLoadVerification {
+		if len(currentCircuit.InputTypes) < len(newInputs) {
+			panic(fmt.Sprintf("%v takes %v arguments, got %v", currentCircuit.Name, len(currentCircuit.InputIdentifiers), len(newInputs)))
 		}
-		b, err := currentCircuit.InputTypes[i].compare(out[0])
-		if b {
-			//do we need this map assignment?
-			currentCircuit.functions[currentCircuit.InputIdentifiers[0]] = newInputs[0]
-			currentCircuit.InputTypes = currentCircuit.InputTypes[1:]
-			currentCircuit.InputIdentifiers = currentCircuit.InputIdentifiers[1:]
+		for i := 0; i < len(newInputs); i++ {
+			out := newInputs[i].outputs()
+			if len(out) != 1 {
+				//a()-> x,y
+				//so we dont allos foo( a()), even when foo takes two arguments. should we stay with go syntax?
+				panic("")
+			}
+			b, err := currentCircuit.InputTypes[i].compare(out[0])
+			if b {
+				//do we need this map assignment?
+				currentCircuit.functions[currentCircuit.InputIdentifiers[0]] = newInputs[0]
+				currentCircuit.InputTypes = currentCircuit.InputTypes[1:]
+				currentCircuit.InputIdentifiers = currentCircuit.InputIdentifiers[1:]
+				continue
+			}
 
-			continue
+			panic(err)
+
 		}
-
-		panic(err)
-
 	}
-
 	return
 }
 

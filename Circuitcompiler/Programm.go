@@ -186,91 +186,92 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 
 		panic(fmt.Sprintf("array %s not declared", resolvedName))
 
-	//case IF_FUNCTION_CALL:
-	//
-	//	ifElseCircuits, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier)
-	//	if !ex {
-	//		panic(fmt.Sprintf("function %s not declared", currentConstraint.Output.Identifier))
-	//	}
-	//
-	//	negatedConditions := []*function{}
-	//	var result Tokens
-	//	for _, task := range ifElseCircuits.taskStack.data {
-	//		statement, ex := ifElseCircuits.findFunctionInBloodline(task.Output.Identifier)
-	//		if !ex {
-	//			panic(fmt.Sprintf("function %s not declared", currentConstraint.Output.Identifier))
-	//		}
-	//
-	//		//check if the condition is static. if that is the case, and it is true, we execute
-	//		//the statement and return. the remaining if-else conditions are ignored
-	//		//else condition
-	//		if task.Output.Type == ELSE {
-	//
-	//			bund, retu := statement.execute(gateCollector)
-	//			if result == nil {
-	//				return bund, retu
-	//			}
-	//
-	//			var composed = bund.fac().primitiveReturnfunction()
-	//
-	//			for _, negatedCondition := range negatedConditions {
-	//				composed = combineFunctions("*", composed, negatedCondition, currentCircuit)
-	//			}
-	//			bund, _ = composed.execute(gateCollector)
-	//
-	//			return rets(AddFactors(result, bund.fac()), nil), retu
-	//		}
-	//		if isStat, isSat := currentCircuit.checkStaticCondition(task.Inputs[0]); isSat && isStat {
-	//
-	//			bund, retu := statement.execute(gateCollector)
-	//			if result == nil {
-	//				return bund, retu
-	//			}
-	//
-	//			var composed = bund.fac().primitiveReturnfunction()
-	//
-	//			for _, negatedCondition := range negatedConditions {
-	//				composed = combineFunctions("*", composed, negatedCondition, currentCircuit)
-	//			}
-	//			bund, _ = composed.execute(gateCollector)
-	//
-	//			return rets(AddFactors(result, bund.fac()), nil), retu
-	//		} else if !isStat {
-	//
-	//			//the condition
-	//			conditionBund, r := currentCircuit.compile(task.Inputs[0], gateCollector)
-	//			if r || len(conditionBund) != 1 {
-	//				panic("an error during compilation of the if condition appeared")
-	//			}
-	//
-	//			//run whats inside the if { }
-	//			//if there is a return, we append the conditional to it.
-	//			//TODO how to handle overwrites?
-	//			rr, r := statement.execute(gateCollector)
-	//			if r {
-	//				composed := combineFunctions("*", conditionBund.fac().primitiveReturnfunction(), rr.fac().primitiveReturnfunction(), currentCircuit)
-	//				for _, negatedCondition := range negatedConditions {
-	//					composed = combineFunctions("*", composed, negatedCondition, currentCircuit)
-	//				}
-	//				f, _ := composed.execute(gateCollector)
-	//				result = AddFactors(result, f.fac())
-	//			}
-	//
-	//			//everything the statement returnes, must be multiplied with the condition
-	//			//but what about overwrites inside the statement of variables outside the scope? problem for future
-	//			//mathias, or I give up the concept of overloading variables
-	//
-	//			one := Token{
-	//				Type:       DecimalNumberToken,
-	//				Identifier: "1",
-	//			}
-	//			negateFkt := combineFunctions("-", one.primitiveReturnfunction(), conditionBund.fac().primitiveReturnfunction(), currentCircuit)
-	//			negatedConditions = append(negatedConditions, negateFkt)
-	//
-	//		}
-	//
-	//	}
-	//	return emptyRets()
+	case IF_FUNCTION_CALL:
+
+		ifElseCircuits := currentConstraint.FktInputs[0]
+
+		mulTok := Token{
+			Type:       ArithmeticOperatorToken,
+			Identifier: "*",
+		}
+		negatedConditions := []*function{}
+		var result Tokens
+		for _, task := range ifElseCircuits.taskStack.data {
+			statement := task.FktInputs[0]
+
+			//check if the condition is static. if that is the case, and it is true, we execute
+			//the statement and return. the remaining if-else conditions are ignored
+			//else condition
+			if task.Output.Type == ELSE {
+
+				bund, retu := statement.execute(gateCollector)
+				if result == nil {
+					return bund, retu
+				}
+
+				var composed = bund.fac().primitiveReturnfunction()
+
+				for _, negatedCondition := range negatedConditions {
+					composed = combineFunctions(mulTok, composed, negatedCondition, currentCircuit)
+				}
+				bund, _ = composed.execute(gateCollector)
+
+				return rets((result.AddFactors(bund.fac())), nil), retu
+			}
+			if isStat, isSat := currentCircuit.checkStaticCondition(task.Inputs[0]); isSat && isStat {
+
+				bund, retu := statement.execute(gateCollector)
+				if result == nil {
+					return bund, retu
+				}
+
+				var composed = bund.fac().primitiveReturnfunction()
+
+				for _, negatedCondition := range negatedConditions {
+					composed = combineFunctions(mulTok, composed, negatedCondition, currentCircuit)
+				}
+				bund, _ = composed.execute(gateCollector)
+
+				return rets((result.AddFactors(bund.fac())), nil), retu
+			} else if !isStat {
+
+				//the condition
+				conditionBund, r := currentCircuit.compile(task.Inputs[0], gateCollector)
+				if r || len(conditionBund) != 1 {
+					panic("an error during compilation of the if condition appeared")
+				}
+
+				//run whats inside the if { }
+				//if there is a return, we append the conditional to it.
+				//TODO how to handle overwrites?
+				rr, r := statement.execute(gateCollector)
+				if r {
+					composed := combineFunctions(mulTok, conditionBund.fac().primitiveReturnfunction(), rr.fac().primitiveReturnfunction(), currentCircuit)
+					for _, negatedCondition := range negatedConditions {
+						composed = combineFunctions(mulTok, composed, negatedCondition, currentCircuit)
+					}
+					f, _ := composed.execute(gateCollector)
+					result = (result.AddFactors(f.fac()))
+				}
+
+				//everything the statement returnes, must be multiplied with the condition
+				//but what about overwrites inside the statement of variables outside the scope? problem for future
+				//mathias, or I give up the concept of overloading variables
+
+				one := Token{
+					Type:       DecimalNumberToken,
+					Identifier: "1",
+				}
+				negateFkt := combineFunctions(Token{
+					Type:       ArithmeticOperatorToken,
+					Identifier: "-",
+				}, one.primitiveReturnfunction(), conditionBund.fac().primitiveReturnfunction(), currentCircuit)
+				negatedConditions = append(negatedConditions, negateFkt)
+
+			}
+
+		}
+		return emptyRets()
 	case FUNCTION_CALL:
 		switch currentConstraint.Output.Identifier {
 		case "BREAK":
@@ -293,7 +294,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			currentCircuit.SPLIT(true, arg, gateCollector)
 			return emptyRets()
 
-		case "addGateConstraint":
+		case "add":
 			if len(currentConstraint.Inputs) != 2 {
 				panic("addition constraint requires 2 arguments")
 			}
@@ -301,14 +302,11 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			rightClone := currentConstraint.Inputs[1]
 			leftFactors, _ := currentCircuit.compile(leftClone, gateCollector)
 			rightFactors, _ := currentCircuit.compile(rightClone, gateCollector)
-			commonExtracted, extractedLeft, extractedRight := extractConstant(leftFactors.fac(), rightFactors.fac())
 
-			sGate := summationGate(extractedLeft.AddFactors(extractedRight))
-			id := gateCollector.Add(sGate)
+			sGate := summationGate(leftFactors.fac().AddFactors(rightFactors.fac()))
+			gateCollector.Add(sGate)
 
-			fres := id.CopyAndSetMultiplicative(commonExtracted)
-
-			return fres.toBundle(), false
+			return emptyRets()
 		case "equal":
 			if len(currentConstraint.Inputs) != 2 {
 				panic("equality constraint requires 2 arguments")
@@ -553,34 +551,33 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			nTok := gateCollector.Add(mGate).CopyAndSetMultiplicative(commonFactor)
 
 			return nTok.toBundle(), currentConstraint.Output.Type == RETURN
-		//case "/":
-		//	//a / b
-		//	leftFactors, _ = currentCircuit.compile(left, gateCollector)
-		//	rightFactors, _ = currentCircuit.compile(right, gateCollector)
-		//
-		//	if len(leftFactors) != 1 || len(rightFactors) != 1 {
-		//		panic("")
-		//	}
-		//
-		//	if !rightFactors[0].facs.containsArgument() { // (x1+x2..)/6
-		//		return rets(mulFactors(leftFactors.fac(), invertFactors(rightFactors.fac())), nil), currentConstraint.Output.Type == RETURN
-		//	}
-		//
-		//	gcdl, facL := factorSignature(leftFactors.fac())
-		//	gcdR, facR := factorSignature(rightFactors.fac())
-		//	//TODO is this a good idea?
-		//	commonF := utils.Field.ArithmeticField.Div(gcdl, gcdR)
-		//
-		//	//inverse gate enforces the input to be non zero
-		//	//eg. b*b^-1 = 1
-		//	var inversB = inverseGate(facR)
-		//	var g = divisionGate(facL, facR)
-		//
-		//	gateCollector.Add(inversB)
-		//	nTok := gateCollector.Add(g)
-		//
-		//	f := factor{Typ: nTok, multiplicative: commonF}
-		//	return rets(Tokens{f}, nil), currentConstraint.Output.Type == RETURN
+		case "/":
+			//a / b
+			leftFactors, _ = currentCircuit.compile(left, gateCollector)
+			rightFactors, _ = currentCircuit.compile(right, gateCollector)
+
+			if len(leftFactors) != 1 || len(rightFactors) != 1 {
+				panic("")
+			}
+
+			if !rightFactors[0].facs.containsArgument() { // (x1+x2..)/6
+				return rets(divideFactors(leftFactors.fac(), (rightFactors.fac()[0])), nil), currentConstraint.Output.Type == RETURN
+			}
+
+			gcdl, facL := factorSignature(leftFactors.fac())
+			gcdR, facR := factorSignature(rightFactors.fac())
+			//TODO is this a good idea?
+			commonF := utils.Field.ArithmeticField.Div(gcdl, gcdR)
+
+			//inverse gate enforces the input to be non zero
+			//eg. b*b^-1 = 1
+			var inversB = inverseGate(facR)
+			var g = divisionGate(facL, facR)
+
+			gateCollector.Add(inversB)
+			nTok := gateCollector.Add(g)
+
+			return nTok.CopyAndSetMultiplicative(commonF).toBundle(), currentConstraint.Output.Type == RETURN
 		//case "**":
 		//	//apply a fixed exponent exponentiation using a simple square and multiply method
 		//	leftFactors, _ = currentCircuit.compile(left, gateCollector)
@@ -631,12 +628,12 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			addedFactors := leftFactors.fac().AddFactors(rightFactors.fac())
 			return rets(addedFactors, nil), currentConstraint.Output.Type == RETURN
 
-			//case "-":
-			//	leftFactors, _ = currentCircuit.compile(left, gateCollector)
-			//	rightFactors, _ = currentCircuit.compile(right, gateCollector)
-			//	rf := negateFactors(rightFactors.fac())
-			//	addedFactors := AddFactors(leftFactors.fac(), rf)
-			//	return rets(addedFactors, nil), currentConstraint.Output.Type == RETURN
+		case "-":
+			leftFactors, _ = currentCircuit.compile(left, gateCollector)
+			rightFactors, _ = currentCircuit.compile(right, gateCollector)
+			rf := rightFactors.fac().Negate()
+			addedFactors := rf.AddFactors(leftFactors.fac())
+			return rets(addedFactors, nil), currentConstraint.Output.Type == RETURN
 		}
 		break
 	case AssignmentOperatorToken:
@@ -849,6 +846,8 @@ func newProgram() (program *Program) {
 		globalFunction: NewCircuit("global", nil),
 		PublicInputs:   []string{"1"},
 	}
+	//handle the fixed functions.. either here or elsewhere
+	program.globalFunction.functions = predeclaredFunctionsMap
 	return
 }
 

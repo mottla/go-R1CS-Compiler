@@ -130,6 +130,15 @@ func mulFactors(leftFactors, rightFactors Tokens) (result Tokens) {
 	}
 	return leftFactors
 }
+func divideFactors(leftFactors Tokens, rightFactor Token) (result Tokens) {
+
+	for i, left := range leftFactors {
+
+		leftFactors[i] = leftFactors[i].CopyAndSetMultiplicative(divType(rightFactor.value, left.value, rightFactor.Type))
+
+	}
+	return leftFactors
+}
 
 //adds two Tokens to one iff they are both are constants or of the same variable
 func (in *Tokens) Add(a Token) {
@@ -169,8 +178,17 @@ func (from Tokens) primitiveReturnfunction() (gives *function) {
 
 }
 
-//TODO Add assertions
-func combineFunctions(operation string, l, r, context *function, lc, rc *Constraint) (*function, *Constraint) {
+func combineConstraints(operation string, lc, rc *Constraint) *Constraint {
+	c := &Constraint{
+		Output: Token{
+			Type:       ArithmeticOperatorToken,
+			Identifier: operation,
+		},
+		Inputs: []*Constraint{lc, rc}}
+	return c
+}
+
+func combineFunctions(operation Token, l, r, context *function) *function {
 
 	rmp := NewCircuit("", context)
 	if len(l.OutputTypes) != 1 {
@@ -179,16 +197,37 @@ func combineFunctions(operation string, l, r, context *function, lc, rc *Constra
 	if eq, err := l.hasEqualDescription(r); !eq {
 		panic(err)
 	}
-	rmp.OutputTypes = l.OutputTypes
+	if operation.Type == BinaryComperatorToken || operation.Type == BooleanOperatorToken {
+		rmp.OutputTypes = []returnTypes{{
+			typ: Token{
+				Type: BOOL,
+			},
+		}}
+	} else {
+		rmp.OutputTypes = l.OutputTypes
+	}
 
-	c := &Constraint{
-		Output: Token{
-			Type:       ArithmeticOperatorToken,
-			Identifier: operation,
-		},
-		Inputs: []*Constraint{lc, rc}}
-	return rmp, c
+	idL, idR := "l", "r"
+	rmp.functions[idL] = l
+	rmp.functions[idR] = r
+	rmp.taskStack.add(&Constraint{
+		Output: operation,
+		Inputs: []*Constraint{
+			{
+				Output: Token{
+					Type:       FUNCTION_CALL,
+					Identifier: idL,
+				},
+			}, {
+				Output: Token{
+					Type:       FUNCTION_CALL,
+					Identifier: idR,
+				},
+			}},
+	})
+	return rmp
 }
+
 func checkRangeValidity(in *big.Int, tokenType TokenType) bool {
 	switch tokenType {
 	case BOOL:
@@ -285,6 +324,39 @@ func mulType(l, r *big.Int, tokenType TokenType) *big.Int {
 		return utils.Field.ArithmeticField.Mul(l, r)
 	case DecimalNumberToken:
 		return utils.Field.ArithmeticField.Mul(l, r)
+	}
+	panic("")
+}
+func divType(l, r *big.Int, tokenType TokenType) *big.Int {
+	checkRangeValidity(l, tokenType)
+	checkRangeValidity(r, tokenType)
+	switch tokenType {
+	case BOOL:
+		return utils.Field.ArithmeticField.Div(l, r)
+	case U8:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint8(ll) / uint8(rr)))
+
+	case U16:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint16(ll) / uint16(rr)))
+
+	case U32:
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(uint64(uint32(ll) / uint32(rr)))
+
+	case U64: //cannot be reached. since uint64 conversion would fail anyway
+		ll, rr := l.Uint64(), r.Uint64()
+
+		return new(big.Int).SetUint64(ll / rr)
+
+	case FIELD:
+		return utils.Field.ArithmeticField.Div(l, r)
+	case DecimalNumberToken:
+
 	}
 	panic("")
 }

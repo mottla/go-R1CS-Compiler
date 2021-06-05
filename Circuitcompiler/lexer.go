@@ -29,14 +29,17 @@ type Token struct {
 	readInLine int
 }
 
-func (ch Token) String() string {
-	if ch.Type == 0 {
-		return ""
-	}
+func (ch Token) getType() string {
 	if ch.isArray {
 		fmt.Sprintf("%v[%v]", ch.Type, ch.dimensions)
 	}
 	return fmt.Sprintf("%v", ch.Type)
+}
+func (ch Token) String() string {
+	if ch.isArray {
+		fmt.Sprintf("%v%v[%v]", ch.Type, ch.Identifier, ch.dimensions)
+	}
+	return fmt.Sprintf("%v%v", ch.Type, ch.Identifier)
 }
 func (t Token) copy() (r Token) {
 	r = Token{
@@ -78,20 +81,27 @@ var arithmeticOperator = []string{"-", "+", "*", "/", "**"}
 var booleanOperator = []string{"||", "&&"}
 var bitOperator = []string{">>", "<<", "<<<", ">>>", "|", "^", "&"}
 var binaryComperator = []string{"==", "!=", ">", ">=", "<", "<="}
-var predeclaredFunctions = []string{"SPLIT", "equal ", "BREAK", "ADD"}
 
 //var unaryOperator = []string{"++", "--"}
 
 var operationMap = make(map[string]TokenType)
-var predeclaredFunctionsMap = make(map[string]bool)
+var predeclaredFunctionsMap = make(map[string]*function)
 var keyWordMap map[string]TokenType
-var handle = make(map[string]func(...*function))
 
 func init() {
 
-	for _, v := range predeclaredFunctions {
-		predeclaredFunctionsMap[v] = true
-	}
+	n1 := NewCircuit("", &function{})
+	n1.skipLoadVerification = true
+	predeclaredFunctionsMap["SPLIT"] = n1
+
+	n1 = NewCircuit("", &function{})
+	n1.skipLoadVerification = true
+	predeclaredFunctionsMap["equal"] = n1
+
+	n1 = NewCircuit("", &function{})
+	n1.skipLoadVerification = true
+	predeclaredFunctionsMap["add"] = n1
+
 	for _, v := range assignmentOperator {
 		operationMap[v] = AssignmentOperatorToken
 	}

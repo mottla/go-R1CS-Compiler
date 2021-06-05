@@ -49,6 +49,7 @@ func main(x field)(field){
 	public{
 	x
 	}
+	
 	return (x*fubunaci(7))
 }
 func fubunaci(a field)(field){
@@ -58,7 +59,7 @@ func fubunaci(a field)(field){
 	if a==1{
 		return 1
 	}
-	return addGateConstraint(fubunaci(a-1),fubunaci(a-2))
+	return fubunaci(a-1)+fubunaci(a-2)
 }
 `},
 	{

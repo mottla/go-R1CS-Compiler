@@ -47,3 +47,7 @@ func TestNewFactors(t *testing.T) {
 	fmt.Println(tks[0].String())
 	fmt.Println(big.NewInt(0))
 }
+
+func TestToken_CopyAndSetMultiplicative(t *testing.T) {
+	fmt.Println(uint32(13) / uint32(7))
+}
