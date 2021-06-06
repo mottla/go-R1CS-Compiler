@@ -55,6 +55,9 @@ func (f Tokens) Negate() (n Tokens) {
 	return
 }
 func (t Token) toFactors() Tokens {
+	if t.value == nil {
+		t.value = bigOne
+	}
 	return Tokens{t}
 }
 

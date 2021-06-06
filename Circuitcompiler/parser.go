@@ -103,6 +103,7 @@ func (p *Parser) parseExpression(stack []Token, inFkt *function, inConstr *Const
 			if !ex {
 				panic("")
 			}
+			//set value to big one
 			*inFkt = *v.flatCopy()
 			return inFkt, &Constraint{Output: stack[0]}
 		}
@@ -140,7 +141,6 @@ func (p *Parser) parseExpression(stack []Token, inFkt *function, inConstr *Const
 		*inFkt = *v.flatCopy()
 		inConstr.Output = stack[0]
 		inConstr.Inputs = argConst
-
 		inFkt.getsLoadedWith(argFks)
 		//whats the taskmap here?
 		if len(rest) != 0 {
@@ -215,46 +215,74 @@ func (p *Parser) parseExpression(stack []Token, inFkt *function, inConstr *Const
 		return inFkt, inConstr
 	}
 
-	//if stack[0].Type == ARRAY_CALL {
-	//	tok := stack[0]
-	//	p.loadDimension()
-	//
-	//	v, ex := inFkt.findFunctionInBloodline(stack[0].Identifier)
-	//	if !ex {
-	//		panic("")
-	//	}
-	//	rest, arguments := p.parseArguments(inFkt.Context, stack[1:], splitAtClosingBrackets)
-	//
-	//	*inFkt = *v.flatCopy()
-	//	inFkt.getsLoadedWith(arguments)
-	//	//whats the taskmap here?
-	//	if len(rest) != 0 {
-	//		if rest[0].Identifier == "(" {
-	//			rest[0].Type = FUNCTION_CALL
-	//
-	//			p.parseExpression(rest, inFkt)
-	//			return inFkt
-	//		}
-	//		panic("")
-	//	}
-	//	return inFkt
-	//
-	//	return
-	//}
-	//if stack[0].Identifier == "[" && stack[len(stack)-1].Identifier == "]" {
-	//
-	//	cr := &Constraint{Output: Token{
-	//		Type: ARRAY_DECLARE,
-	//	},
-	//	}
-	//	constraint.Inputs = append(constraint.Inputs, cr)
-	//	restAfterBracketsClosed := p.argumentParse(currentCircuit, stack, splitAtClosingSquareBrackets, cr)
-	//	// [1,b,c]
-	//	if len(restAfterBracketsClosed) != 0 {
-	//		p.error("array fdsaf")
-	//	}
-	//	return
-	//}
+	if stack[0].Type == ARRAY_CALL {
+		tok := stack[0]
+		v, ex := inFkt.findFunctionInBloodline(stack[0].Identifier)
+		if !ex {
+			panic("")
+		}
+
+		rest := p.readDimension(stack, inFkt, inConstr)
+
+		if len(inConstr.Inputs) > len(v.OutputTypes[0].typ.dimensions) {
+			p.error("")
+		}
+		if len(rest) != 0 {
+			if rest[0].Identifier == "(" {
+				rest[0].Type = FUNCTION_CALL
+
+				p.parseExpression(rest, inFkt)
+				return inFkt
+			}
+			panic("")
+		}
+		return inFkt
+
+	}
+
+	if stack[0].Identifier == "[" {
+		//var a = [2]func(a bool)(bool){}
+		//note that we only support type arrays, not [2]func(){}
+		dimensionDeclare, typ, statement := splitAtFirstHighestTokenType(stack, Types)
+
+		tok := Token{
+			Type:       typ.Type,
+			dimensions: p.loadDimension(dimensionDeclare, []int64{}),
+		}
+		inConstr.Output = tok
+		inFkt.OutputTypes = []returnTypes{{typ: tok}}
+
+		p.Assert("{", statement[0])
+
+		inputs, restt, s := splitAtClosingSwingBrackets(statement)
+		if !s {
+			panic("closing brackets missing")
+		}
+
+		restAfterBracketsClosed, argFkts, argCtrs := p.parseArguments(inFkt, inputs, splitNothing)
+		if len(argFkts) != int(tok.dimensions[0]) {
+			p.error("expect %v array inputs, got %v", (tok.dimensions[0]), len(argFkts))
+		}
+
+		expectedReturnType := returnTypes{
+			typ: Token{
+				Type:       typ.Type,
+				dimensions: tok.dimensions[1:],
+			},
+		}
+		for _, arg := range argFkts {
+			if eq, err := arg.hasEqualDescription2(expectedReturnType); !eq {
+				p.error(err)
+			}
+		}
+		inConstr.Inputs = argCtrs
+
+		// [1,b,c]
+		if len(restAfterBracketsClosed) != 0 || len(restt) != 0 {
+			p.error("array fdsaf")
+		}
+		return inFkt, inConstr
+	}
 
 	panic("unexpected reach")
 
@@ -335,6 +363,7 @@ func (p *Parser) prepareFunctionHeader(current *function, stack []Token) {
 			Type:       stack[1].Type,
 			Identifier: stack[0].Identifier,
 			isArgument: true,
+			value:      bigOne,
 		}
 		//a bool[4][5]
 		//if len(stack) > 2 {
@@ -454,6 +483,7 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 		}
 
 		p.PreCompile(currentCircuit, rest)
+		return
 	case IMPORT:
 		//if len(tokens) == 1 || tokens[1].Type != IDENTIFIER_VARIABLE {
 		//	p.error("import failed")
@@ -591,6 +621,7 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 
 			ifFunction.taskStack.add(ifConstraint)
 
+			//todo note that if we return inside a nested if. we get problem with type checking the returns
 			p.PreCompile(tsk, statement)
 
 			ex, v := tsk.taskStack.PeekLast()
@@ -745,9 +776,10 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 			panic(fmt.Sprintf("variable %s already declared", id.Identifier))
 		}
 		fkt := NewCircuit(id.Identifier, currentCircuit)
-		currentCircuit.functions[(id.Identifier)] = fkt
 
 		p.parseExpression(rhs[1:], fkt, &Constraint{})
+		//we add the function after we parse, to avoid self reference such as  var a = a
+		currentCircuit.functions[(id.Identifier)] = fkt
 
 		p.PreCompile(currentCircuit, afterBreak)
 
@@ -757,6 +789,29 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 		p.error("%statement", tokens)
 	}
 	return
+}
+
+func (p *Parser) readDimension(toks []Token, infkt *function, inConstr *Constraint) (rest []Token) {
+	if len(toks) == 0 {
+		return nil
+	}
+	if toks[0].Identifier != "[" {
+		return toks
+	}
+
+	left, right, success := splitAtClosingSquareBrackets(toks)
+	if !success {
+		p.error("")
+	}
+	outfkt, outconst := p.parseExpression(left, NewCircuit("", infkt), &Constraint{})
+
+	//currently only static array access supported
+	if ew, err := outfkt.HasIntegerOutput(); !ew {
+		p.error(err)
+	}
+	inConstr.Inputs = append(inConstr.Inputs, outconst)
+
+	return p.readDimension(right, infkt, inConstr)
 }
 
 func (p *Parser) loadDimension(toks []Token, in []int64) (res []int64) {
@@ -799,39 +854,6 @@ func (p *Parser) resolveArrayName(currentCircuit *function, con *Constraint) (co
 	return
 }
 func (p *Parser) loadArray(current *function, name string, constaint *Constraint, dim []int64, pos []int, expecedType Token) {
-
-	//var staticTypeCheck = func(c *Constraint) {
-	//	switch c.Output.Type {
-	//	case FUNCTION_CALL:
-	//		if f, ex := current.findFunctionInBloodline(c.Output.Identifier); ex {
-	//			if len(f.OutputTypes) != 1 || f.OutputTypes[0].typ.Type != expecedType {
-	//				panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, f.OutputTypes[0].typ.Type))
-	//			}
-	//		} else {
-	//			panic(fmt.Sprintf("variable %s not declared", c.Output.Identifier))
-	//		}
-	//	case IDENTIFIER_VARIABLE:
-	//		if f, ex := current.findFunctionInBloodline(c.Output.Identifier); ex {
-	//			if len(f.InputTypes) != 0 || len(f.OutputTypes) != 1 || f.OutputTypes[0].typ.Type != expecedType {
-	//				panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, f.OutputTypes[0].typ.Type))
-	//			}
-	//		} else {
-	//			panic(fmt.Sprintf("variable %s not declared", c.Output.Identifier))
-	//		}
-	//	case DecimalNumberToken:
-	//		checkRangeValidity(c.Output.value, expecedType)
-	//	case ARRAY_CALL:
-	//		if f, ex := current.findFunctionInBloodline(c.Output.Identifier); ex {
-	//			if len(f.OutputTypes) != 1 || f.OutputTypes[0].typ.Type != expecedType {
-	//				panic(fmt.Sprintf("assignment missmatch. Expected %v, got %v", expecedType, f.OutputTypes[0].typ.Type))
-	//			}
-	//		} else {
-	//			panic(fmt.Sprintf("variable %s not declared", c.Output.Identifier))
-	//		}
-	//	default:
-	//
-	//	}
-	//}
 
 	//single variable assignment
 	// bool a = 1
@@ -945,15 +967,6 @@ func splitAt(in []Token, splitAt string) (out [][]Token) {
 func splitTokensAtFirstString(in []Token, splitAt string) (cutLeft, cutRight []Token) {
 	for i := 0; i < len(in); i++ {
 		if in[i].Identifier == splitAt {
-			return in[:i], in[i:]
-		}
-	}
-	return in, cutRight
-}
-
-func readTokenTillType(in []Token) (cutLeft, cutRight []Token) {
-	for i := 0; i < len(in); i++ {
-		if in[i].Type&Types != 0 {
 			return in[:i], in[i:]
 		}
 	}

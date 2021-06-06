@@ -47,6 +47,35 @@ func TestFunction_SPLIT(t *testing.T) {
 	}
 }
 
+func TestArrayProgram(t *testing.T) {
+	code := `
+	func main(x field,z field) {
+		var a = [2][2]bool{ [2]bool{true,false}, [2]bool{true,false}}
+		return 
+	}
+`
+	program := Parse(code)
+	container := program.Execute()
+
+	gates := container.OrderedGates()
+	fmt.Println("\n generating R1CS")
+	r1cs := program.GatesToR1CS(gates)
+	fmt.Printf("number of gates %v, witness length %v \n ", r1cs.NumberOfGates, r1cs.WitnessLength)
+	//
+	fmt.Println(r1cs.L)
+	fmt.Println(r1cs.R)
+	fmt.Println(r1cs.O)
+	inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, []*big.Int{big.NewInt(int64(27)), big.NewInt(int64(27)), big.NewInt(int64(3))})
+
+	fmt.Println("input")
+	fmt.Println(inputs)
+
+	w, err := CalculateTrace(r1cs, inputs)
+	assert.NoError(t, err)
+	fmt.Printf("witness len %v \n ", len(w))
+	fmt.Println(w)
+}
+
 func TestForProgram(t *testing.T) {
 	code := `
 	func a()(func(c bool)(bool)) {	
@@ -106,9 +135,9 @@ func TestCorrectness(t *testing.T) {
 		r1cs := program.GatesToR1CS(gates)
 		fmt.Printf("number of gates %v, witness length %v \n ", r1cs.NumberOfGates, r1cs.WitnessLength)
 		//
-		//fmt.Println(r1cs.L)
-		//fmt.Println(r1cs.R)
-		//fmt.Println(r1cs.O)
+		fmt.Println(r1cs.L)
+		fmt.Println(r1cs.R)
+		fmt.Println(r1cs.O)
 
 		for _, io := range test.IO {
 			inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, io.Inputs)

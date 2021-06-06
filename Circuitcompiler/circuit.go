@@ -90,7 +90,7 @@ func (v *function) outputs() []returnTypes {
 func (f *function) HasBooleanOutput() (answer bool, error string) {
 
 	if len(f.OutputTypes) != 1 {
-		return false, "bool-output type function in if-else condition expected"
+		return false, "bool-output type function  expected"
 	}
 
 	return f.OutputTypes[0].compare(returnTypes{
@@ -98,6 +98,21 @@ func (f *function) HasBooleanOutput() (answer bool, error string) {
 		fkt:            nil,
 		typ: Token{
 			Type: BOOL,
+		},
+	})
+
+}
+func (f *function) HasIntegerOutput() (answer bool, error string) {
+
+	if len(f.OutputTypes) != 1 {
+		return false, "integer-output type function  expected"
+	}
+
+	return f.OutputTypes[0].compare(returnTypes{
+		functionReturn: false,
+		fkt:            nil,
+		typ: Token{
+			Type: FIELD,
 		},
 	})
 
@@ -140,7 +155,7 @@ func (this *function) hasEqualDescription2(thenThat returnTypes) (answer bool, e
 		return true, ""
 	}
 
-	return false, fmt.Sprintf("%v expects %v, got %v", this.Name, l, r)
+	return false, fmt.Sprintf("Type missmatch:  %v vs. %v", l, r)
 }
 func (this *function) hasEqualDescription(thenThat *function) (answer bool, error string) {
 	l := this.description()

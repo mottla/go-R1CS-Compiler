@@ -206,15 +206,14 @@ func constraint(x){
 		}},
 
 		Code: `
-#import "/github.com/mottla/go-R1CS-Compiler/utils/basicOperations"
 
-func main(x){
+func main(x field){
 	public{x}
 	return (1*fubunaci(8,x))
 }
 
-func fubunaci(a,v){
-	var dyn[] = {v,v}
+func fubunaci(a field,v field){
+	var dyn = []field{v,v}
 	var i = 2
 	for (i<a;i=i+1){
 		var n = addGateConstraint(dyn[0],dyn[1])

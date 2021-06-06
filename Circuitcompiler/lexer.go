@@ -30,10 +30,8 @@ type Token struct {
 }
 
 func (ch Token) getType() string {
-	if ch.isArray {
-		fmt.Sprintf("%v[%v]", ch.Type, ch.dimensions)
-	}
-	return fmt.Sprintf("%v", ch.Type)
+
+	return fmt.Sprintf("%v[%v]", ch.Type, ch.dimensions)
 }
 func (ch Token) String() string {
 	if ch.isArray {
