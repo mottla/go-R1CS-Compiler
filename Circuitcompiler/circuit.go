@@ -18,9 +18,11 @@ type function struct {
 	OutputTypes            []returnTypes
 
 	//parent function. this function inherits all functions wich are accessible from his anchestors. Recent overload Late
-	Context              *function
+	Context *function
+	//
+	Dimension            []int64
 	skipLoadVerification bool //predeclared functions
-	//this are the functions, that are defined within this function
+	//this are the functions (signatures only!), that are defined within this function
 	functions map[string]*function
 
 	//this will stay. the concept of a taskstack is relevant
@@ -197,6 +199,9 @@ func (circ *function) flatCopy() (clone *function) {
 	argumentIdentifiers := make([]string, len(circ.InputIdentifiers))
 	clone.skipLoadVerification = circ.skipLoadVerification
 	copy(argumentIdentifiers, circ.InputIdentifiers)
+	clone.Dimension = make([]int64, len(circ.Dimension))
+	copy(clone.Dimension, circ.Dimension)
+
 	clone.InputIdentifiers = argumentIdentifiers
 
 	outputs := make([]returnTypes, len(circ.OutputTypes))
@@ -300,6 +305,9 @@ func (w *watchstack) len() int {
 }
 
 func (w *watchstack) add(c *Constraint) {
+	if c.Output.Type == 0 {
+		return
+	}
 	w.data = append(w.data, c)
 
 }

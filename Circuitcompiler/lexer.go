@@ -23,29 +23,22 @@ type Token struct {
 	Type       TokenType
 	Identifier string
 	value      *big.Int
-	isArray    bool
 	isArgument bool
-	dimensions []int64
 	readInLine int
 }
 
 func (ch Token) getType() string {
 
-	return fmt.Sprintf("%v[%v]", ch.Type, ch.dimensions)
+	return fmt.Sprintf("%v", ch.Type)
 }
 func (ch Token) String() string {
-	if ch.isArray {
-		fmt.Sprintf("%v%v[%v]", ch.Type, ch.Identifier, ch.dimensions)
-	}
 	return fmt.Sprintf("%v%v", ch.Type, ch.Identifier)
 }
 func (t Token) copy() (r Token) {
 	r = Token{
 		Type:       t.Type,
 		Identifier: t.Identifier,
-		isArray:    t.isArray,
 		isArgument: t.isArgument,
-		dimensions: t.dimensions,
 		readInLine: t.readInLine,
 	}
 	if t.value == nil {
@@ -56,7 +49,7 @@ func (t Token) copy() (r Token) {
 	return
 }
 func (t Token) equalDescription(a Token) bool {
-	return t.isArgument == a.isArgument && t.isArray == a.isArray && t.Identifier == a.Identifier && ArrayString(t.dimensions) == ArrayString(a.dimensions)
+	return t.isArgument == a.isArgument && t.Identifier == a.Identifier
 }
 
 func (t Tokens) next() (r Token) {

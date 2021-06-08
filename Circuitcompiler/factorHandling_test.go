@@ -16,9 +16,9 @@ func TestNewFactors(t *testing.T) {
 		Type:       FIELD,
 		Identifier: "",
 		value:      bigOne,
-		isArray:    false,
+
 		isArgument: false,
-		dimensions: nil,
+
 		readInLine: 0,
 	}}
 	tks.Add(tks[0])
@@ -27,9 +27,8 @@ func TestNewFactors(t *testing.T) {
 		Type:       FIELD,
 		Identifier: "a",
 		value:      bigOne,
-		isArray:    false,
+
 		isArgument: true,
-		dimensions: nil,
 		readInLine: 0,
 	})
 	fmt.Println(tks[0].String())
@@ -37,9 +36,7 @@ func TestNewFactors(t *testing.T) {
 		Type:       FIELD,
 		Identifier: "a",
 		value:      bigOne,
-		isArray:    false,
 		isArgument: true,
-		dimensions: nil,
 		readInLine: 0,
 	})
 	fmt.Println(tks[0].String())
@@ -49,5 +46,12 @@ func TestNewFactors(t *testing.T) {
 }
 
 func TestToken_CopyAndSetMultiplicative(t *testing.T) {
-	fmt.Println(uint32(13) / uint32(7))
+	var a = 42
+	var b = func() int { return a }
+	a = 12
+	fmt.Println(b())
+
+	var c = []int{a, a}
+	a = 3
+	fmt.Println(c[1])
 }

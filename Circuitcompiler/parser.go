@@ -78,10 +78,10 @@ func (c *Constraint) Set(in Token) *Constraint {
 }
 
 //i think i need to revive the contraint part.. the outFkt should only serve the purpose of type checking
-func (p *Parser) parseExpression(stack []Token, inFkt *function, inConstr *Constraint) (outFkt *function, currentConstriant *Constraint) {
+func (p *Parser) parseExpression(stack []Token, context *function, helper ...*Constraint) (outFktSignature *function, outConstr *Constraint) {
 	//(exp)->exp
 	stack = stripOfBrackets(stack)
-
+	outConstr = &Constraint{}
 	if len(stack) == 0 {
 		p.error("Expression expected")
 		return
@@ -91,21 +91,19 @@ func (p *Parser) parseExpression(stack []Token, inFkt *function, inConstr *Const
 	if len(stack) == 1 {
 		if stack[0].Type == DecimalNumberToken {
 			stack[0].Type = FIELD
-			return stack[0].primitiveReturnfunction(), inConstr.Set(stack[0])
+			return stack[0].primitiveReturnfunction(), stack[0].toConstraint()
 		}
 		if stack[0].Type == True || stack[0].Type == False {
 			stack[0].Type = BOOL
-			return stack[0].primitiveReturnfunction(), inConstr.Set(stack[0])
+			return stack[0].primitiveReturnfunction(), stack[0].toConstraint()
 		}
 
 		if stack[0].Type == IDENTIFIER_VARIABLE {
-			v, ex := inFkt.findFunctionInBloodline(stack[0].Identifier)
+			v, ex := context.findFunctionInBloodline(stack[0].Identifier)
 			if !ex {
 				panic("")
 			}
-			//set value to big one
-			*inFkt = *v.flatCopy()
-			return inFkt, &Constraint{Output: stack[0]}
+			return v.flatCopy(), stack[0].toConstraint()
 		}
 
 		p.error("Variable or number expected, got %v ", stack[0])
@@ -118,8 +116,8 @@ func (p *Parser) parseExpression(stack []Token, inFkt *function, inConstr *Const
 	// exp Operator exp
 	if binOperation.Type&Operator != 0 {
 
-		lfkt, lc := p.parseExpression(l, NewCircuit("", inFkt.Context), &Constraint{})
-		rfkt, rc := p.parseExpression(r, NewCircuit("", inFkt.Context), &Constraint{})
+		lfkt, lc := p.parseExpression(l, context)
+		rfkt, rc := p.parseExpression(r, context)
 
 		if eq, err := lfkt.hasEqualDescription(rfkt); !eq {
 			p.error(err)
@@ -132,156 +130,191 @@ func (p *Parser) parseExpression(stack []Token, inFkt *function, inConstr *Const
 	}
 
 	if stack[0].Type == FUNCTION_CALL {
-		v, ex := inFkt.findFunctionInBloodline(stack[0].Identifier)
+		v, ex := context.findFunctionInBloodline(stack[0].Identifier)
 		if !ex {
 			panic("")
 		}
-		rest, argFks, argConst := p.parseArguments(inFkt.Context, stack[1:], splitAtClosingBrackets)
-
-		*inFkt = *v.flatCopy()
-		inConstr.Output = stack[0]
-		inConstr.Inputs = argConst
-		inFkt.getsLoadedWith(argFks)
+		rest, argFks, argConst := p.parseArguments(context, stack[1:], splitAtClosingBrackets)
+		outConstr.Output = stack[0]
+		outConstr.Inputs = argConst
+		outFktSignature = v.flatCopy()
+		outFktSignature.getsLoadedWith(argFks)
+		outConstr.FktInputs = []*function{outFktSignature}
 		//whats the taskmap here?
 		if len(rest) != 0 {
 			if rest[0].Identifier == "(" {
 				rest[0].Type = FUNCTION_CALL
-
-				p.parseExpression(rest, inFkt, inConstr)
-				return inFkt, inConstr
+				p.parseExpression(rest, context, outConstr)
+				return
 			}
 			panic("")
 		}
-		return inFkt, inConstr
+		return
 	}
 	if stack[0].Type == FUNCTION_CALL && stack[0].Identifier == "(" {
 
-		rest, argFkt, argConst := p.parseArguments(inFkt.Context, stack[1:], splitAtClosingBrackets)
+		rest, argFkt, argConst := p.parseArguments(context, stack[1:], splitAtClosingBrackets)
 
-		inFkt.getsLoadedWith(argFkt)
-		inConstr.Inputs = append(inConstr.Inputs, argConst...)
+		helper[0].FktInputs[0].getsLoadedWith(argFkt)
+		helper[0].Inputs = append(helper[0].Inputs, argConst...)
 
 		if len(rest) != 0 {
 			if rest[0].Identifier == "(" {
 				rest[0].Type = FUNCTION_CALL
-				p.parseExpression(rest, inFkt, inConstr)
-				return inFkt, inConstr
+				p.parseExpression(rest, context, helper[0])
+				return context, helper[0]
 			}
 			panic("")
 		}
-		return inFkt, inConstr
+		return context, helper[0]
 	}
 
 	if stack[0].Type == FUNCTION_DEFINE {
 
 		p.Assert("(", stack[1])
-
 		inside, statement := splitAtFirstHighestStringType(stack[1:], "{")
+		outFktSignature = NewCircuit("", context)
+		p.PrepareFunctionSignature(outFktSignature, inside)
 
-		p.PrepareFunctionSignature(inFkt, inside)
-		inConstr.Set(stack[0])
 		statement, restt, s := splitAtClosingSwingBrackets(statement)
 		if !s {
 			panic("closing brackets missing")
 		}
-		p.PreCompile(inFkt, statement)
-		inConstr.FktInputs = append(inConstr.FktInputs, inFkt)
+		p.PreCompile(outFktSignature, statement)
+		//we add the function to the constraint
+		//so we cann later call it if needed
+
+		outConstr.Output = stack[0]
+		outConstr.FktInputs = append(outConstr.FktInputs, context)
+
+		//check if the returns match the header description
+		ex, v := outFktSignature.taskStack.PeekLast()
+		fktReturns := ex && v.Output.Type == RETURN
+		if len(outFktSignature.OutputTypes) != 0 && !fktReturns {
+			p.error("return missing")
+		}
+		b, err := outFktSignature.checkIfReturnsMatchHeader(v.FktInputs)
+		if !b {
+			panic(err)
+		}
+
+		//now check, if the fresh defined function is being called
 		if len(restt) != 0 && restt[0].Identifier == "(" {
 			restt[0].Type = FUNCTION_CALL
-			ct := &Constraint{}
-			inConstr.add(ct)
-			p.parseExpression(restt, inFkt, ct)
-			return inFkt, inConstr
+			outConstr.Output = restt[0]
+			p.parseExpression(restt, context, outConstr)
+			return outFktSignature, outConstr
 		} else {
 			if len(restt) != 0 {
 				panic("")
 			}
 
 		}
-		//now compile the function
 
-		//check if the returns match the header description
-
-		ex, v := inFkt.taskStack.PeekLast()
-		fktReturns := ex && v.Output.Type == RETURN
-
-		if len(inFkt.OutputTypes) != 0 && !fktReturns {
-			p.error("return missing")
-		}
-		b, err := inFkt.checkIfReturnsMatchHeader(v.FktInputs)
-		if !b {
-			panic(err)
-		}
-		return inFkt, inConstr
+		return
 	}
 
-	if stack[0].Type == ARRAY_CALL {
-		tok := stack[0]
-		v, ex := inFkt.findFunctionInBloodline(stack[0].Identifier)
-		if !ex {
-			panic("")
+	//if stack[0].Type == ARRAY_CALL {
+	//	tok := stack[0]
+	//	v, ex := context.findFunctionInBloodline(stack[0].Identifier)
+	//	if !ex {
+	//		panic("")
+	//	}
+	//
+	//	rest := p.readDimension(stack, context, helper)
+	//
+	//	if len(helper.Inputs) > len(v.OutputTypes[0].typ.dimensions) {
+	//		p.error("")
+	//	}
+	//	if len(rest) != 0 {
+	//		if rest[0].Identifier == "(" {
+	//			rest[0].Type = FUNCTION_CALL
+	//
+	//			p.parseExpression(rest, context)
+	//			return context
+	//		}
+	//		panic("")
+	//	}
+	//	return context
+	//
+	//}
+	//
+	////null pointer exception incoming in 3.2.1..
+	if stack[0].Identifier == "{" && len(helper[0].FktInputs[0].Dimension) != 0 {
+		arrayFkt := helper[0].FktInputs[0]
+		dim := arrayFkt.Dimension
+		//we reduce the dimension.. note that we should restore it in the initial array define section
+		next := helper[0].clone()
+		next.FktInputs[0].functions = make(map[string]*function)
+		next.FktInputs[0].Dimension = next.FktInputs[0].Dimension[1:]
+		inputs, restt, s := splitAtClosingSwingBrackets(stack)
+		if !s || len(restt) != 0 {
+			panic("closing brackets missing")
+		}
+		restAfterBracketsClosed, argFkts, argCtrs := p.parseArguments(context, inputs, splitNothing, next)
+
+		if len(argFkts) != int(dim[0]) {
+			p.error("expect %v array inputs, got %v", (dim[0]), len(argFkts))
 		}
 
-		rest := p.readDimension(stack, inFkt, inConstr)
+		expectedReturnType := helper[0].FktInputs[0]
 
-		if len(inConstr.Inputs) > len(v.OutputTypes[0].typ.dimensions) {
-			p.error("")
-		}
-		if len(rest) != 0 {
-			if rest[0].Identifier == "(" {
-				rest[0].Type = FUNCTION_CALL
-
-				p.parseExpression(rest, inFkt)
-				return inFkt
+		//we reached the leafes. time for type checking
+		if len(dim)==1{
+			for i, arg := range argFkts {
+				if eq, err := arg.hasEqualDescription(expectedReturnType); !eq {
+					p.error(err)
+				}
 			}
-			panic("")
 		}
-		return inFkt
+		//nonon how should we store them sub arrays..
+		for i, arg := range argFkts {
 
+			arrayFkt.functions[fmt.Sprintf("%v",i)]=arg
+		}
+
+		return
 	}
+	//
 
 	if stack[0].Identifier == "[" {
 		//var a = [2]func(a bool)(bool){}
-		//note that we only support type arrays, not [2]func(){}
-		dimensionDeclare, typ, statement := splitAtFirstHighestTokenType(stack, Types)
 
-		tok := Token{
-			Type:       typ.Type,
-			dimensions: p.loadDimension(dimensionDeclare, []int64{}),
-		}
-		inConstr.Output = tok
-		inFkt.OutputTypes = []returnTypes{{typ: tok}}
+		//we will return an empty constraint. thats fo sure
+		//since an array declaration is not a task that has to be exectured?
 
-		p.Assert("{", statement[0])
+		ctr := &Constraint{}
+		rest := p.readDimension(stack, context, ctr)
 
-		inputs, restt, s := splitAtClosingSwingBrackets(statement)
-		if !s {
-			panic("closing brackets missing")
+		//check that the dimensions are compile time fixed
+		for _, v := range ctr.Inputs {
+			if v.Output.
 		}
 
-		restAfterBracketsClosed, argFkts, argCtrs := p.parseArguments(inFkt, inputs, splitNothing)
-		if len(argFkts) != int(tok.dimensions[0]) {
-			p.error("expect %v array inputs, got %v", (tok.dimensions[0]), len(argFkts))
+		arrayType, arrayDeclare := splitTokensAtFirstString(rest, "{")
+
+		outFktSignature = NewCircuit("", context)
+		outFktSignature.Dimension =
+
+		if arrayType[0].Type&Types != 0 && len(arrayType) == 1 {
+			outFktSignature.OutputTypes = append(outFktSignature.OutputTypes, returnTypes{
+				typ: arrayType[0],
+			})
+			return
+		} else if stack[0].Type == FUNCTION_DEFINE {
+			p.PrepareFunctionSignature(outFktSignature, stack[1:])
+			return
+		} else {
+			p.error("invalid array declare")
 		}
 
-		expectedReturnType := returnTypes{
-			typ: Token{
-				Type:       typ.Type,
-				dimensions: tok.dimensions[1:],
-			},
+		outConstr.Output = Token{
+			Type: ARRAY_DECLARE,
 		}
-		for _, arg := range argFkts {
-			if eq, err := arg.hasEqualDescription2(expectedReturnType); !eq {
-				p.error(err)
-			}
-		}
-		inConstr.Inputs = argCtrs
-
-		// [1,b,c]
-		if len(restAfterBracketsClosed) != 0 || len(restt) != 0 {
-			p.error("array fdsaf")
-		}
-		return inFkt, inConstr
+		outConstr.FktInputs = []*function{outFktSignature}
+		p.Assert("{", arrayDeclare[0])
+		p.parseExpression(arrayDeclare, context, outConstr)
+		return outFktSignature,outConstr
 	}
 
 	panic("unexpected reach")
@@ -290,7 +323,7 @@ func (p *Parser) parseExpression(stack []Token, inFkt *function, inConstr *Const
 
 }
 
-func (p *Parser) parseArguments(context *function, stack []Token, bracketSplitFunction func(in []Token) (cutLeft, cutRight []Token, success bool)) (rest []Token, args []*function, argConstr []*Constraint) {
+func (p *Parser) parseArguments(context *function, stack []Token, bracketSplitFunction func(in []Token) (cutLeft, cutRight []Token, success bool), inConstraint ...*Constraint) (rest []Token, args []*function, argConstr []*Constraint) {
 
 	functionInput, rem, success := bracketSplitFunction(stack)
 
@@ -304,8 +337,8 @@ func (p *Parser) parseArguments(context *function, stack []Token, bracketSplitFu
 	//arguments can be expressions, so we need to parse them
 	for arguments, remm := splitAtFirstHighestStringType(functionInput, ","); ; arguments, remm = splitAtFirstHighestStringType(remm, ",") {
 		arguments = removeLeadingAndTrailingBreaks(arguments)
-		nfk := NewCircuit("", context)
-		f, l := p.parseExpression(arguments, nfk, &Constraint{})
+
+		f, l := p.parseExpression(arguments, context, inConstraint...)
 		args = append(args, f)
 		argConstr = append(argConstr, l)
 		if remm == nil {
@@ -592,14 +625,14 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 			}
 			if i == 0 {
 				p.AssertTypes(conditions[i], IF)
-				f, c := p.parseExpression(conditions[0][1:], NewCircuit("", currentCircuit), &Constraint{})
+				f, c := p.parseExpression(conditions[0][1:], currentCircuit)
 				if b, err := f.HasBooleanOutput(); !b {
 					p.error(err)
 				}
 				ifConstraint.Inputs = append(ifConstraint.Inputs, c)
 			} else if i < len(statements)-1 {
 				p.AssertTypes(conditions[i], ELSE, IF)
-				f, c := p.parseExpression(conditions[i][2:], NewCircuit("", currentCircuit), &Constraint{})
+				f, c := p.parseExpression(conditions[i][2:], currentCircuit)
 				if b, err := f.HasBooleanOutput(); !b {
 					p.error(err)
 				}
@@ -607,7 +640,7 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 			} else {
 				if len(conditions[i]) > 1 {
 					p.AssertTypes(conditions[i], ELSE, IF)
-					f, c := p.parseExpression(conditions[i][2:], NewCircuit("", currentCircuit), &Constraint{})
+					f, c := p.parseExpression(conditions[i][2:], currentCircuit)
 					if b, err := f.HasBooleanOutput(); !b {
 						p.error(err)
 					}
@@ -724,7 +757,7 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 		for ; ; arguments, rest = splitAtFirstHighestStringType(rest, ",", "\n") {
 			arguments = removeLeadingAndTrailingBreaks(arguments)
 
-			fk, constr := p.parseExpression(arguments, NewCircuit("", currentCircuit), &Constraint{})
+			fk, constr := p.parseExpression(arguments, currentCircuit)
 
 			//check if the assignment types match
 			if eq, _ := toOverload.FktInputs[0].hasEqualDescription(fk); eq {
@@ -777,7 +810,10 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 		}
 		fkt := NewCircuit(id.Identifier, currentCircuit)
 
-		p.parseExpression(rhs[1:], fkt, &Constraint{})
+		//if ctr is not empty, then we add a task.
+		fkt, ctr := p.parseExpression(rhs[1:], currentCircuit)
+		currentCircuit.taskStack.add(ctr)
+		fkt.Name = id.Identifier
 		//we add the function after we parse, to avoid self reference such as  var a = a
 		currentCircuit.functions[(id.Identifier)] = fkt
 
@@ -803,7 +839,7 @@ func (p *Parser) readDimension(toks []Token, infkt *function, inConstr *Constrai
 	if !success {
 		p.error("")
 	}
-	outfkt, outconst := p.parseExpression(left, NewCircuit("", infkt), &Constraint{})
+	outfkt, outconst := p.parseExpression(left, infkt)
 
 	//currently only static array access supported
 	if ew, err := outfkt.HasIntegerOutput(); !ew {
@@ -1129,7 +1165,7 @@ func (c *Constraint) clone() *Constraint {
 		fkts[i] = cc.flatCopy()
 	}
 	return &Constraint{
-		Output:    c.Output,
+		Output:    c.Output.copy(),
 		Inputs:    in,
 		FktInputs: fkts,
 	}

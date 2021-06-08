@@ -33,6 +33,11 @@ func (t Token) toBundle() bundle {
 		preloadedFunction: nil},
 	}
 }
+func (t Token) toConstraint() *Constraint {
+	return &Constraint{
+		Output: t.copy(),
+	}
+}
 func emptyRets() ([]returnTyped, bool) {
 	return rets(nil, nil), false
 }
@@ -134,12 +139,10 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			bund, _ := currentCircuit.compile(v, gateCollector)
 			r = append(r, bund...)
 		}
-
 		//for _, v := range currentConstraint.FktInputs {
 		//	bund, _ := v.execute(gateCollector)
 		//	r = append(r, bund...)
 		//}
-
 		return r, true
 	case VARIABLE_OVERLOAD:
 		var bund bundle
