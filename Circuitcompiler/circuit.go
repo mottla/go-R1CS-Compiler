@@ -36,7 +36,10 @@ type returnTypes struct {
 }
 
 func (r returnTypes) String() string {
-	return fmt.Sprintf("%v%v", r.fkt.description(), r.typ.getType())
+	if r.functionReturn {
+		return fmt.Sprintf("%v", r.fkt.description())
+	}
+	return fmt.Sprintf("%v", r.typ.getType())
 }
 
 func NewCircuit(name string, context *function) *function {
