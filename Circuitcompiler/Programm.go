@@ -324,7 +324,12 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			var nextCircuit *function
 			var ex bool
 
-			if nextCircuit, ex = currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); !ex {
+			if currentConstraint.Output.Identifier == "" {
+				if len(currentConstraint.FktInputs) != 1 {
+					panic("")
+				}
+				nextCircuit = currentConstraint.FktInputs[0]
+			} else if nextCircuit, ex = currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); !ex {
 				panic(fmt.Sprintf("function %s not declared", currentConstraint.Output.Identifier))
 			}
 			var nxt *function
@@ -342,7 +347,6 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				}
 				inputs[i] = re[0].facs.primitiveReturnfunction()
 			}
-
 			nxt.getsLoadedWith(inputs)
 
 			rr, _ := nxt.execute(gateCollector)

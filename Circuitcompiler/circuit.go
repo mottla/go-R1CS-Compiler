@@ -74,6 +74,7 @@ func (this *function) description() string {
 }
 
 func (a returnTypes) compare(in returnTypes) (bool, string) {
+
 	l := a.String()
 	r := in.String()
 	if strings.EqualFold(l, r) {
@@ -368,31 +369,32 @@ func (currentCircuit *function) getFunctionInputs() (oldInputs []*function) {
 
 func (currentCircuit *function) getsLoadedWith(newInputs []*function) {
 
-	if !currentCircuit.skipLoadVerification {
-		if len(currentCircuit.InputTypes) < len(newInputs) {
-			panic(fmt.Sprintf("%v takes %v arguments, got %v", currentCircuit.Name, len(currentCircuit.InputIdentifiers), len(newInputs)))
-		}
-		for i := 0; i < len(newInputs); i++ {
-			out := newInputs[i].outputs()
-			if len(out) != 1 {
-				//a()-> x,y
-				//so we dont allos foo( a()), even when foo takes two arguments. should we stay with go syntax?
-				panic("")
-			}
-			b, err := currentCircuit.InputTypes[i].compare(out[0])
-			if b {
-				//do we need this map assignment?
-				currentCircuit.functions[currentCircuit.InputIdentifiers[0]] = newInputs[0]
-				currentCircuit.InputTypes = currentCircuit.InputTypes[1:]
-				currentCircuit.InputIdentifiers = currentCircuit.InputIdentifiers[1:]
-				continue
-			}
-
-			panic(err)
-
-		}
+	if len(currentCircuit.InputTypes) < len(newInputs) {
+		panic(fmt.Sprintf("%v takes %v arguments, got %v", currentCircuit.Name, len(currentCircuit.InputIdentifiers), len(newInputs)))
 	}
-	return
+
+	if len(newInputs) == 0 || currentCircuit.skipLoadVerification {
+		return
+	}
+
+	out := newInputs[0].outputs()
+	if len(out) != 1 {
+		//a()-> x,y
+		//so we dont allos foo( a()), even when foo takes two arguments. should we stay with go syntax?
+		panic("")
+	}
+	b, err := currentCircuit.InputTypes[0].compare(out[0])
+	if b {
+		//do we need this map assignment?
+		currentCircuit.functions[currentCircuit.InputIdentifiers[0]] = newInputs[0]
+		currentCircuit.InputTypes = currentCircuit.InputTypes[1:]
+		currentCircuit.InputIdentifiers = currentCircuit.InputIdentifiers[1:]
+		currentCircuit.getsLoadedWith(newInputs[1:])
+		return
+	}
+
+	panic(err)
+
 }
 
 //pani
@@ -417,6 +419,8 @@ func (currentCircuit *function) resolveArrayName(id string, inputs []*Constraint
 }
 
 func (currentCircuit *function) execute(gateCollector *gateContainer) (bundle, bool) {
+
+	//the function is not ready to execute. So we return it entirely
 	if len(currentCircuit.InputTypes) != 0 {
 		return bundle{returnTyped{
 			facs:              nil,
@@ -424,6 +428,7 @@ func (currentCircuit *function) execute(gateCollector *gateContainer) (bundle, b
 		}}, false
 	}
 
+	//the funcion is ready, so we execute it. if it returns, then we pass on the returned. if not, then we assume its a single type?
 	for _, task := range currentCircuit.taskStack.data {
 		bundl, rett := currentCircuit.compile(task, gateCollector)
 		if rett {
@@ -431,7 +436,11 @@ func (currentCircuit *function) execute(gateCollector *gateContainer) (bundle, b
 		}
 		//gateCollector.completeFunction(f)
 	}
-	return emptyRets()
+	t := currentCircuit.OutputTypes[0].typ.copy()
+	t.Identifier = currentCircuit.Name
+	return bundle{returnTyped{
+		facs: Tokens{t},
+	}}, false
 }
 
 func (from *Constraint) primitiveReturnfunction(typ Token) (gives *function) {

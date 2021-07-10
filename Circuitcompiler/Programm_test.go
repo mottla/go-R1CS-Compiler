@@ -78,14 +78,6 @@ func TestArrayProgram(t *testing.T) {
 
 func TestForProgram(t *testing.T) {
 	code := `
-	func a()(func(c bool)(bool)) {	
-		return func(a bool)(bool){return true}
-	}
-	func square(x field)(field){ return x*x }
-	func mul(a field,b field)(field){return b*a }
-	func test()(bool,field){
-		return true,3
-	}
 	func main(x field,z field,y func(x bool)(bool))(func(a field)(bool)) {
 		#x,z = test()
 		var mul5 = mul(5)
@@ -94,6 +86,15 @@ func TestForProgram(t *testing.T) {
 		x = (square(x)-1)*square(x)
 		return func(a field)(bool) { return true }
 	}
+	func a()(func(c bool)(bool)) {	
+		return func(a bool)(bool){return true}
+	}
+	func square(x field)(field){ return x*x }
+	func mul(a field,b field)(field){return b*a }
+	func test()(bool,field){
+		return true,3
+	}
+
 
 `
 	program := Parse(code)
@@ -107,7 +108,7 @@ func TestForProgram(t *testing.T) {
 	fmt.Println(r1cs.L)
 	fmt.Println(r1cs.R)
 	fmt.Println(r1cs.O)
-	inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, []*big.Int{big.NewInt(int64(27)), big.NewInt(int64(27)), big.NewInt(int64(3))})
+	inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, []*big.Int{big.NewInt(int64(3)), big.NewInt(int64(5)), big.NewInt(int64(7))})
 
 	fmt.Println("input")
 	fmt.Println(inputs)

@@ -58,6 +58,15 @@ func Parse(code string) (p *Program) {
 	return p
 }
 
+func (c *Constraint) add(in *Constraint) *Constraint {
+	c.Inputs = append(c.Inputs, in)
+	return c
+}
+func (c *Constraint) Set(in Token) *Constraint {
+	c.Output = in
+	return c
+}
+
 // write some pattern matcher
 
 //arrayCall := arrayCall[Number] | identifier
@@ -68,17 +77,8 @@ func Parse(code string) (p *Program) {
 // out := " " | Type | out , Type | arrayDefine | functionHeaderDefine
 //call := exp | call, exp
 
-func (c *Constraint) add(in *Constraint) *Constraint {
-	c.Inputs = append(c.Inputs, in)
-	return c
-}
-func (c *Constraint) Set(in Token) *Constraint {
-	c.Output = in
-	return c
-}
-
 //i think i need to revive the contraint part.. the outFkt should only serve the purpose of type checking
-func (p *Parser) parseExpression(stack []Token, context *function, in *Constraint) (outFktSignature *function) {
+func (p *Parser) parseExpression(stack []Token, context *function, in *Constraint) (newFunction *function) {
 	//(exp)->exp
 	stack = stripOfBrackets(stack)
 
@@ -143,21 +143,20 @@ func (p *Parser) parseExpression(stack []Token, context *function, in *Constrain
 		if !ex {
 			panic("")
 		}
-		outFktSignature = v.flatCopy()
+		newFunction = v.flatCopy()
+		in.Output.Identifier = stack[0].Identifier
 		stack = stack[1:]
 	}
 
 FKTCALL:
-	if stack[0].Identifier == "(" && outFktSignature != nil {
+	if stack[0].Identifier == "(" && newFunction != nil {
 
 		rest, argFks, argConst := p.parseArguments(context, stack[1:], splitAtClosingBrackets)
 		stack = rest
 
-		in.Output = Token{
-			Type: FUNCTION_CALL,
-		}
+		in.Output.Type = FUNCTION_CALL
 		in.Inputs = append(in.Inputs, argConst...)
-		outFktSignature.getsLoadedWith(argFks)
+		newFunction.getsLoadedWith(argFks)
 		//whats the taskmap here?
 		if len(stack) != 0 {
 			if stack[0].Identifier == "(" {
@@ -168,13 +167,13 @@ FKTCALL:
 			}
 			panic("")
 		}
-		return outFktSignature
+		return newFunction
 	}
 
 ARYCALL:
-	if stack[0].Identifier == "[" && outFktSignature != nil {
+	if stack[0].Identifier == "[" && newFunction != nil {
 
-		if len(outFktSignature.Dimension) == 0 {
+		if len(newFunction.Dimension) == 0 {
 			p.error("not an array")
 		}
 
@@ -190,8 +189,8 @@ ARYCALL:
 		if ew, err := outfkt.HasIntegerOutput(); !ew {
 			p.error(err)
 		}
-		outFktSignature = outFktSignature.flatCopy()
-		outFktSignature.Dimension = outFktSignature.Dimension[1:]
+		newFunction = newFunction.flatCopy()
+		newFunction.Dimension = newFunction.Dimension[1:]
 
 		if len(stack) != 0 {
 			if stack[0].Identifier == "(" {
@@ -202,7 +201,7 @@ ARYCALL:
 			}
 			panic("")
 		}
-		return outFktSignature
+		return newFunction
 
 	}
 
@@ -210,28 +209,29 @@ ARYCALL:
 
 		p.Assert("(", stack[1])
 		inside, statement := splitAtFirstHighestStringType(stack[1:], "{")
-		outFktSignature = NewCircuit("", context)
-		p.PrepareFunctionSignature(outFktSignature, inside)
+		newFunction = NewCircuit("", context)
+		p.PrepareFunctionSignature(newFunction, inside)
 
 		//dont need this
-		//in.Output = stack[0]
+		in.Output.Type = FUNCTION_CALL
+		in.FktInputs = append(in.FktInputs, newFunction)
 
 		var s bool
 		statement, stack, s = splitAtClosingSwingBrackets(statement)
 		if !s {
 			panic("closing brackets missing")
 		}
-		p.PreCompile(outFktSignature, statement)
+		p.PreCompile(newFunction, statement)
 		//we add the function to the constraint
 		//so we cann later call it if needed
 
 		//check if the returns match the header description
-		ex, v := outFktSignature.taskStack.PeekLast()
+		ex, v := newFunction.taskStack.PeekLast()
 		fktReturns := ex && v.Output.Type == RETURN
-		if len(outFktSignature.OutputTypes) != 0 && !fktReturns {
+		if len(newFunction.OutputTypes) != 0 && !fktReturns {
 			p.error("return missing")
 		}
-		b, err := outFktSignature.checkIfReturnsMatchHeader(v.FktInputs)
+		b, err := newFunction.checkIfReturnsMatchHeader(v.FktInputs)
 		if !b {
 			panic(err)
 		}
@@ -288,11 +288,11 @@ ARYCALL:
 		//since an array declaration is not a task that has to be exectured?
 		var dim []int64
 		stack, dim = p.readStaticDimension(stack, []int64{})
-		outFktSignature.Dimension = dim[1:]
+		newFunction.Dimension = dim[1:]
 		arrayType, arrayDeclare := splitTokensAtFirstString(stack, "{")
 
-		outFktSignature = NewCircuit("", context)
-		p.prepareType(outFktSignature, arrayType)
+		newFunction = NewCircuit("", context)
+		p.prepareType(newFunction, arrayType)
 
 		p.Assert("{", arrayDeclare[0])
 		args := p.parseExpression(arrayDeclare, context, in)
@@ -302,10 +302,10 @@ ARYCALL:
 		}
 
 		//we only need to check for one, cuz equivalenz of all other has been asserted in the brackets part
-		if eq, err := args.hasEqualDescription(outFktSignature); !eq {
+		if eq, err := args.hasEqualDescription(newFunction); !eq {
 			p.error(err)
 		}
-		return outFktSignature
+		return newFunction
 	}
 
 	panic("unexpected reach")
@@ -382,12 +382,16 @@ func (p *Parser) prepareArguments(current *function, stack []Token) {
 	current.InputIdentifiers = append(current.InputIdentifiers, stack[0].Identifier)
 
 	argument := NewCircuit(stack[0].Identifier, nil)
-	stack = stack[1:]
-	p.prepareType(argument, stack)
-	current.InputTypes = append(current.InputTypes, returnTypes{
-		functionReturn: true,
-		fkt:            argument,
-	})
+	p.prepareType(argument, stack[1:])
+	if len(argument.InputTypes) == 0 && len(argument.OutputTypes) == 1 {
+		current.InputTypes = append(current.InputTypes, argument.OutputTypes[0])
+	} else {
+		current.InputTypes = append(current.InputTypes, returnTypes{
+			functionReturn: true,
+			fkt:            argument,
+		})
+	}
+
 	current.functions[stack[0].Identifier] = argument
 	return
 
@@ -398,10 +402,14 @@ func (p *Parser) prepareReturns(current *function, stack []Token) {
 	}
 	argument := NewCircuit("", nil)
 	p.prepareType(argument, stack)
-	current.OutputTypes = append(current.OutputTypes, returnTypes{
-		functionReturn: true,
-		fkt:            argument,
-	})
+	if len(argument.InputTypes) == 0 && len(argument.OutputTypes) == 1 {
+		current.OutputTypes = append(current.OutputTypes, argument.OutputTypes[0])
+	} else {
+		current.OutputTypes = append(current.OutputTypes, returnTypes{
+			functionReturn: true,
+			fkt:            argument,
+		})
+	}
 	return
 
 }
@@ -440,8 +448,6 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 		close(p.done)
 		return
 	}
-
-	//first we re
 
 	switch tokens[0].Type {
 	case PUBLIC:
@@ -770,7 +776,7 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 		currentCircuit.taskStack.add(ctr)
 		fkt.Name = id.Identifier
 		//we add the function after we parse, to avoid self reference such as  var a = a
-		currentCircuit.functions[(id.Identifier)] = fkt
+		currentCircuit.functions[id.Identifier] = fkt
 
 		p.PreCompile(currentCircuit, afterBreak)
 
