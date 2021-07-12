@@ -33,9 +33,9 @@ func (t Token) toBundle() bundle {
 		preloadedFunction: nil},
 	}
 }
-func (t Token) toConstraint() *Constraint {
-	return &Constraint{
-		Output: t.copy(),
+func (t Token) toConstraint() *Task {
+	return &Task{
+		Description: t.copy(),
 	}
 }
 func emptyRets() ([]returnTyped, bool) {
@@ -48,34 +48,41 @@ func (f bundle) fac() Tokens {
 	return f[0].facs
 }
 
+func getArrayElement(pos []int64, vals []*Task) *Task {
+	if len(pos) == 1 {
+		return vals[int(pos[0])]
+	}
+	return getArrayElement(pos[1:], vals[int(pos[0])].Inputs)
+}
+
 //recursively walks through the parse tree to create a list of all
 //multiplication gates needed for the QAP construction
 //Takes into account, that multiplication with constants and addition (= substraction) can be reduced, and does so
 //
-func (currentCircuit *function) compile(currentConstraint *Constraint, gateCollector *gateContainer) (returnBundle bundle, reachedReturn bool) {
-	if currentConstraint.Output.Type&Types != 0 {
-		return currentConstraint.Output.toBundle(), false
+func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *gateContainer) (returnBundle bundle, reachedReturn bool) {
+	if currentConstraint.Description.Type&Types != 0 {
+		return currentConstraint.Description.toBundle(), false
 	}
 
-	switch currentConstraint.Output.Type {
+	switch currentConstraint.Description.Type {
 	case IDENTIFIER_VARIABLE:
 
-		if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); ex {
+		if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Description.Identifier); ex {
 			if len(f.InputIdentifiers) == 0 {
 				return f.execute(gateCollector)
 			}
 			return rets(nil, f), false
 		}
 
-		panic(fmt.Sprintf("variable %s not declared", currentConstraint.Output.Identifier))
+		panic(fmt.Sprintf("variable %s not declared", currentConstraint.Description.Identifier))
 	case FOR:
 		//we check the condition each time we rerun the loop
 		//isStatic, isSat := currentCircuit.checkStaticCondition(currentConstraint.InputTypes[0])
 		//for isSat && isStatic {
-		//	content := &Constraint{
-		//		Output: Token{
+		//	content := &Task{
+		//		Description: Token{
 		//			Type:       FUNCTION_CALL,
-		//			Identifier: currentConstraint.Output.Identifier,
+		//			Identifier: currentConstraint.Description.Identifier,
 		//		},
 		//	}
 		//	f, retu, fkt := currentCircuit.compile(content, gateCollector)
@@ -145,49 +152,65 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		//}
 		return r, true
 	case VARIABLE_OVERLOAD:
-		var bund bundle
-		for _, c := range currentConstraint.Inputs[1].Inputs {
-			re, _ := currentCircuit.compile(c, gateCollector)
-			bund = append(bund, re...)
-		}
 
-		//range over the
+		//I am not sure if I should execute the new assigned variables
+		//var bund bundle
+		//for _, c := range currentConstraint.Inputs[1].Inputs {
+		//	re, _ := currentCircuit.compile(c, gateCollector)
+		//	bund = append(bund, re...)
+		//}
+
+		//range over the variables to overload
 		for i, v := range currentConstraint.Inputs[0].Inputs {
-			var toOverloadIdentifier = v.Output.Identifier
 
-			if v.Output.Type == ARRAY_CALL {
-				toOverloadIdentifier = currentCircuit.resolveArrayName(toOverloadIdentifier, v.Inputs)
-			}
+			var toOverloadIdentifier = v.Description.Identifier
+			f, ex := currentCircuit.findFunctionInBloodline(toOverloadIdentifier)
 
-			context, ex := currentCircuit.getCircuitContainingFunctionInBloodline(toOverloadIdentifier)
 			if !ex {
-				panic("should be cought at parsing already")
+				panic("")
 			}
+			if v.Description.Type == ARRAY_CALL {
+				s, vals := f.taskStack.PeekLast()
+				if !s || len(f.Dimension) == 0 {
+					panic("")
+				}
+				toOverload := getArrayElement(currentCircuit.resolveArrayName(v.Inputs), vals.Inputs)
+				*toOverload = *currentConstraint.Inputs[1].Inputs[i]
+				//arrays store their elements in the taks tree that is supposed to be the only element in the task stack
 
-			//fkt, _ := context.functions[toOverloadIdentifier]
-			var assign *function
-			if bund[i].facs == nil {
-				assign = bund[i].preloadedFunction
 			} else {
-				assign = bund[i].facs.primitiveReturnfunction()
+				*f.taskStack = *newWatchstack().add(currentConstraint.Inputs[1].Inputs[i])
+				//context, ex := currentCircuit.getCircuitContainingFunctionInBloodline(toOverloadIdentifier)
+				//if !ex {
+				//	panic("should be cought at parsing already")
+				//}
+				////fkt, _ := context.functions[toOverloadIdentifier]
+				//var assign *function
+				//if bund[i].facs == nil {
+				//	assign = bund[i].preloadedFunction
+				//} else {
+				//	assign = bund[i].facs.primitiveReturnfunction()
+				//}
+				//
+				//context.functions[toOverloadIdentifier] = assign
+
 			}
 
-			context.functions[toOverloadIdentifier] = assign
 		}
 		return emptyRets()
 	case ARRAY_CALL:
-		var id string
-		if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); !ex {
-			id = currentConstraint.Output.Identifier
-		} else {
-			id = f.Name
-		}
-		resolvedName := currentCircuit.resolveArrayName(id, currentConstraint.Inputs)
-		if f, ex := currentCircuit.findFunctionInBloodline(resolvedName); ex {
-			return f.execute(gateCollector)
-		}
+		//var id string
+		//if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Description.Identifier); !ex {
+		//	id = currentConstraint.Description.Identifier
+		//} else {
+		//	id = f.Name
+		//}
+		//resolvedName := currentCircuit.resolveArrayName(id, currentConstraint.Inputs)
+		//if f, ex := currentCircuit.findFunctionInBloodline(resolvedName); ex {
+		//	return f.execute(gateCollector)
+		//}
 
-		panic(fmt.Sprintf("array %s not declared", resolvedName))
+		//panic(fmt.Sprintf("array %s not declared", resolvedName))
 
 	case IF_FUNCTION_CALL:
 
@@ -205,7 +228,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			//check if the condition is static. if that is the case, and it is true, we execute
 			//the statement and return. the remaining if-else conditions are ignored
 			//else condition
-			if task.Output.Type == ELSE {
+			if task.Description.Type == ELSE {
 
 				bund, retu := statement.execute(gateCollector)
 				if result == nil {
@@ -276,7 +299,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		}
 		return emptyRets()
 	case FUNCTION_CALL:
-		switch currentConstraint.Output.Identifier {
+		switch currentConstraint.Description.Identifier {
 		case "BREAK":
 			// DEBUG function. Set a break point somewhere and read all arguments that were passed to BREAK(args...)
 			//for _, v := range currentConstraint.InputTypes {
@@ -324,13 +347,13 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			var nextCircuit *function
 			var ex bool
 
-			if currentConstraint.Output.Identifier == "" {
+			if currentConstraint.Description.Identifier == "" {
 				if len(currentConstraint.FktInputs) != 1 {
 					panic("")
 				}
 				nextCircuit = currentConstraint.FktInputs[0]
-			} else if nextCircuit, ex = currentCircuit.findFunctionInBloodline(currentConstraint.Output.Identifier); !ex {
-				panic(fmt.Sprintf("function %s not declared", currentConstraint.Output.Identifier))
+			} else if nextCircuit, ex = currentCircuit.findFunctionInBloodline(currentConstraint.Description.Identifier); !ex {
+				panic(fmt.Sprintf("function %s not declared", currentConstraint.Description.Identifier))
 			}
 			var nxt *function
 			nxt = nextCircuit.flatCopy()
@@ -358,11 +381,11 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 
 	var leftFactors, rightFactors bundle
 
-	switch currentConstraint.Output.Type {
+	switch currentConstraint.Description.Type {
 
 	//case BinaryComperatorToken:
 	//
-	//	switch currentConstraint.Output.Identifier {
+	//	switch currentConstraint.Description.Identifier {
 	//	case "==":
 	//		return rets(currentCircuit.equalityGate(currentConstraint, gateCollector), nil), false
 	//	case "!=":
@@ -409,7 +432,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	//		}
 	//		return shift
 	//	}
-	//	switch currentConstraint.Output.Identifier {
+	//	switch currentConstraint.Description.Identifier {
 	//	case "<<":
 	//
 	//		_, bitsLeft := currentCircuit.SPLIT(false, left, gateCollector)
@@ -542,7 +565,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 		left := currentConstraint.Inputs[0]
 		right := currentConstraint.Inputs[1]
 
-		switch currentConstraint.Output.Identifier {
+		switch currentConstraint.Description.Identifier {
 		case "*":
 			leftFactors, _ = currentCircuit.compile(left, gateCollector)
 			rightFactors, _ = currentCircuit.compile(right, gateCollector)
@@ -551,13 +574,13 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 				panic("")
 			}
 			if !leftFactors[0].facs.containsArgument() || !rightFactors[0].facs.containsArgument() {
-				return rets(mulFactors(leftFactors.fac(), rightFactors.fac()), nil), currentConstraint.Output.Type == RETURN
+				return rets(mulFactors(leftFactors.fac(), rightFactors.fac()), nil), currentConstraint.Description.Type == RETURN
 			}
 			commonFactor, newLeft, newRight := extractConstant(leftFactors.fac(), rightFactors.fac())
 			mGate := multiplicationGate(newLeft, newRight)
 			nTok := gateCollector.Add(mGate).CopyAndSetMultiplicative(commonFactor)
 
-			return nTok.toBundle(), currentConstraint.Output.Type == RETURN
+			return nTok.toBundle(), currentConstraint.Description.Type == RETURN
 		case "/":
 			//a / b
 			leftFactors, _ = currentCircuit.compile(left, gateCollector)
@@ -568,7 +591,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			}
 
 			if !rightFactors[0].facs.containsArgument() { // (x1+x2..)/6
-				return rets(divideFactors(leftFactors.fac(), (rightFactors.fac()[0])), nil), currentConstraint.Output.Type == RETURN
+				return rets(divideFactors(leftFactors.fac(), (rightFactors.fac()[0])), nil), currentConstraint.Description.Type == RETURN
 			}
 
 			gcdl, facL := factorSignature(leftFactors.fac())
@@ -584,7 +607,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			gateCollector.Add(inversB)
 			nTok := gateCollector.Add(g)
 
-			return nTok.CopyAndSetMultiplicative(commonF).toBundle(), currentConstraint.Output.Type == RETURN
+			return nTok.CopyAndSetMultiplicative(commonF).toBundle(), currentConstraint.Description.Type == RETURN
 		//case "**":
 		//	//apply a fixed exponent exponentiation using a simple square and multiply method
 		//	leftFactors, _ = currentCircuit.compile(left, gateCollector)
@@ -633,14 +656,14 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 			leftFactors, _ = currentCircuit.compile(left, gateCollector)
 			rightFactors, _ = currentCircuit.compile(right, gateCollector)
 			addedFactors := leftFactors.fac().AddFactors(rightFactors.fac())
-			return rets(addedFactors, nil), currentConstraint.Output.Type == RETURN
+			return rets(addedFactors, nil), currentConstraint.Description.Type == RETURN
 
 		case "-":
 			leftFactors, _ = currentCircuit.compile(left, gateCollector)
 			rightFactors, _ = currentCircuit.compile(right, gateCollector)
 			rf := rightFactors.fac().Negate()
 			addedFactors := rf.AddFactors(leftFactors.fac())
-			return rets(addedFactors, nil), currentConstraint.Output.Type == RETURN
+			return rets(addedFactors, nil), currentConstraint.Description.Type == RETURN
 		}
 		break
 	case AssignmentOperatorToken:
@@ -652,7 +675,7 @@ func (currentCircuit *function) compile(currentConstraint *Constraint, gateColle
 	panic(currentConstraint)
 }
 
-func (currentCircuit *function) SPLIT(makeTheBitsAvailableInCurrentCircuit bool, toSplit *Constraint, gateCollector *gateContainer) (arg Token, bits Tokens) {
+func (currentCircuit *function) SPLIT(makeTheBitsAvailableInCurrentCircuit bool, toSplit *Task, gateCollector *gateContainer) (arg Token, bits Tokens) {
 
 	in, _ := currentCircuit.compile(toSplit, gateCollector)
 	if len(in.fac()) > 1 {
@@ -734,7 +757,7 @@ func split(makeTheBitsAvailableInCurrentCircuit bool, currentCircuit *function, 
 	return bits
 }
 
-func (currentCircuit *function) xor(currentConstraint *Constraint, gateCollector *gateContainer) (argLeft, argRight Token, xorIDS Tokens) {
+func (currentCircuit *function) xor(currentConstraint *Task, gateCollector *gateContainer) (argLeft, argRight Token, xorIDS Tokens) {
 	left := currentConstraint.Inputs[1]
 	right := currentConstraint.Inputs[2]
 
@@ -751,7 +774,7 @@ func (currentCircuit *function) xor(currentConstraint *Constraint, gateCollector
 	return argLeft, argRight, xorIDs
 }
 
-func (currentCircuit *function) and(currentConstraint *Constraint, gateCollector *gateContainer) (argLeft, argRight Token, xorIDS Tokens) {
+func (currentCircuit *function) and(currentConstraint *Task, gateCollector *gateContainer) (argLeft, argRight Token, xorIDS Tokens) {
 	left := currentConstraint.Inputs[1]
 	right := currentConstraint.Inputs[2]
 
@@ -766,7 +789,7 @@ func (currentCircuit *function) and(currentConstraint *Constraint, gateCollector
 	}
 	return argLeft, argRight, andIDs
 }
-func (currentCircuit *function) or(currentConstraint *Constraint, gateCollector *gateContainer) (argLeft, argRight Token, xorIDS Tokens) {
+func (currentCircuit *function) or(currentConstraint *Task, gateCollector *gateContainer) (argLeft, argRight Token, xorIDS Tokens) {
 	left := currentConstraint.Inputs[1]
 	right := currentConstraint.Inputs[2]
 
@@ -782,7 +805,7 @@ func (currentCircuit *function) or(currentConstraint *Constraint, gateCollector 
 	return argLeft, argRight, orIds
 }
 
-func (currentCircuit *function) equalityGate(currentConstraint *Constraint, gateCollector *gateContainer) (facs Tokens) {
+func (currentCircuit *function) equalityGate(currentConstraint *Task, gateCollector *gateContainer) (facs Tokens) {
 
 	argLeft, argRight, xorIDs := currentCircuit.xor(currentConstraint, gateCollector)
 

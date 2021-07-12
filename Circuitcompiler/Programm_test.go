@@ -49,9 +49,14 @@ func TestFunction_SPLIT(t *testing.T) {
 
 func TestArrayProgram(t *testing.T) {
 	code := `
-	func main(x field,z field) {
+	func main(x bool,z field) (field) {
+		var ca = [2]field{33,44}
 		var a = [2][2]bool{ [2]bool{true,false}, [2]bool{true,false}}
-		return 
+		z = z*ca[1]
+		ca[1] = 66
+		z = z*ca[1]
+		z = z*z
+		return z
 	}
 `
 	program := Parse(code)
@@ -65,7 +70,7 @@ func TestArrayProgram(t *testing.T) {
 	fmt.Println(r1cs.L)
 	fmt.Println(r1cs.R)
 	fmt.Println(r1cs.O)
-	inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, []*big.Int{big.NewInt(int64(27)), big.NewInt(int64(27)), big.NewInt(int64(3))})
+	inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, []*big.Int{big.NewInt(int64(27)), big.NewInt(int64(27))})
 
 	fmt.Println("input")
 	fmt.Println(inputs)

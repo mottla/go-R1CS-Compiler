@@ -59,7 +59,11 @@ func (this *function) description() string {
 	if this == nil {
 		return ""
 	}
-	res := "("
+	res := ""
+	if len(this.Dimension) != 0 {
+		res += fmt.Sprintf("%v", this.Dimension)
+	}
+	res += "("
 	for _, v := range this.InputTypes {
 		res += v.String()
 		res += ","
@@ -229,7 +233,7 @@ func (circ *function) flatCopy() (clone *function) {
 	return
 }
 
-func (currentCircuit *function) checkStaticCondition(c *Constraint) (isStatic, isSatisfied bool) {
+func (currentCircuit *function) checkStaticCondition(c *Task) (isStatic, isSatisfied bool) {
 
 	var factorsA, factorsB bundle
 	var A, B *big.Int
@@ -246,7 +250,7 @@ func (currentCircuit *function) checkStaticCondition(c *Constraint) (isStatic, i
 	A = factorsA.fac()[0].value
 	B = factorsB.fac()[0].value
 
-	switch c.Output.Identifier {
+	switch c.Description.Identifier {
 	case "==":
 		if A.Cmp(B) != 0 {
 			return true, false
@@ -278,20 +282,20 @@ func (currentCircuit *function) checkStaticCondition(c *Constraint) (isStatic, i
 		}
 		break
 	default:
-		panic(fmt.Sprintf("unknown operation %v", c.Inputs[0].Output.Identifier))
+		panic(fmt.Sprintf("unknown operation %v", c.Inputs[0].Description.Identifier))
 
 	}
 	return true, true
 }
 
 type watchstack struct {
-	data []*Constraint
+	data []*Task
 }
 
 func newWatchstack() *watchstack {
 
 	return &watchstack{
-		data: []*Constraint{},
+		data: []*Task{},
 	}
 
 }
@@ -308,14 +312,15 @@ func (w *watchstack) len() int {
 	return len(w.data)
 }
 
-func (w *watchstack) add(c *Constraint) {
-	if c.Output.Type == 0 {
-		return
+func (w *watchstack) add(c *Task) *watchstack {
+	if c.Description.Type == 0 {
+		return w
 	}
 	w.data = append(w.data, c)
+	return w
 
 }
-func (w *watchstack) PopFirst() (bool, *Constraint) {
+func (w *watchstack) PopFirst() (bool, *Task) {
 	if len(w.data) == 1 {
 		f := w.data[0]
 		w.data = nil
@@ -328,7 +333,7 @@ func (w *watchstack) PopFirst() (bool, *Constraint) {
 	w.data = w.data[1:]
 	return true, f
 }
-func (w *watchstack) PeekLast() (bool, *Constraint) {
+func (w *watchstack) PeekLast() (bool, *Task) {
 	if len(w.data) == 0 {
 		return false, nil
 	}
@@ -336,14 +341,14 @@ func (w *watchstack) PeekLast() (bool, *Constraint) {
 }
 
 func (w *watchstack) addPrimitiveReturn(tok Token) {
-	w.add(&Constraint{
-		Output: Token{
+	w.add(&Task{
+		Description: Token{
 			Type:       RETURN,
 			Identifier: "",
 		},
-		Inputs: []*Constraint{
+		Inputs: []*Task{
 			{
-				Output: tok,
+				Description: tok,
 			}},
 	})
 }
@@ -397,13 +402,8 @@ func (currentCircuit *function) getsLoadedWith(newInputs []*function) {
 
 }
 
-//pani
-func (currentCircuit *function) resolveArrayName(id string, inputs []*Constraint) (composedName string) {
+func (currentCircuit *function) resolveArrayName(inputs []*Task) (indexPos []int64) {
 
-	var arrayIdentifier = id
-	//if len(c.InputIdentifiers) < 1 {
-	//	panic("accessing array index failed")
-	//}
 	for _, in := range inputs {
 		indexFactors, _ := currentCircuit.compile(in, newGateContainer())
 		if indexFactors.fac().containsArgument() {
@@ -413,9 +413,9 @@ func (currentCircuit *function) resolveArrayName(id string, inputs []*Constraint
 			panic("unexpected")
 		}
 		tmp := indexFactors.fac()[0].value
-		arrayIdentifier += fmt.Sprintf("[%v]", tmp)
+		indexPos = append(indexPos, tmp.Int64())
 	}
-	return arrayIdentifier
+	return
 }
 
 func (currentCircuit *function) execute(gateCollector *gateContainer) (bundle, bool) {
@@ -443,14 +443,14 @@ func (currentCircuit *function) execute(gateCollector *gateContainer) (bundle, b
 	}}, false
 }
 
-func (from *Constraint) primitiveReturnfunction(typ Token) (gives *function) {
-	rmp := NewCircuit(from.Output.Identifier, nil)
-	rmp.taskStack.add(&Constraint{
-		Output: Token{
+func (from *Task) primitiveReturnfunction(typ Token) (gives *function) {
+	rmp := NewCircuit(from.Description.Identifier, nil)
+	rmp.taskStack.add(&Task{
+		Description: Token{
 			Type:       RETURN,
 			Identifier: "",
 		},
-		Inputs: []*Constraint{from}})
+		Inputs: []*Task{from}})
 	rmp.OutputTypes = []returnTypes{{
 		functionReturn: false,
 		fkt:            nil,

@@ -181,13 +181,13 @@ func (from Tokens) primitiveReturnfunction() (gives *function) {
 
 }
 
-func combineConstraints(operation string, lc, rc *Constraint) *Constraint {
-	c := &Constraint{
-		Output: Token{
+func combineConstraints(operation string, lc, rc *Task) *Task {
+	c := &Task{
+		Description: Token{
 			Type:       ArithmeticOperatorToken,
 			Identifier: operation,
 		},
-		Inputs: []*Constraint{lc, rc}}
+		Inputs: []*Task{lc, rc}}
 	return c
 }
 
@@ -213,16 +213,16 @@ func combineFunctions(operation Token, l, r, context *function) *function {
 	idL, idR := "l", "r"
 	rmp.functions[idL] = l
 	rmp.functions[idR] = r
-	rmp.taskStack.add(&Constraint{
-		Output: operation,
-		Inputs: []*Constraint{
+	rmp.taskStack.add(&Task{
+		Description: operation,
+		Inputs: []*Task{
 			{
-				Output: Token{
+				Description: Token{
 					Type:       FUNCTION_CALL,
 					Identifier: idL,
 				},
 			}, {
-				Output: Token{
+				Description: Token{
 					Type:       FUNCTION_CALL,
 					Identifier: idR,
 				},

@@ -31,8 +31,8 @@ func TestArray(t *testing.T) {
 	parser := NewParser(code, false)
 	toks := parser.stackAllTokens()
 	toks = toks[:len(toks)-1]
-	ct := Constraint{}
-	parser.parseExpression(toks, NewCircuit("", &function{}), &Constraint{})
+	ct := Task{}
+	parser.parseExpression(toks, NewCircuit("", &function{}), &Task{})
 	fmt.Println(ct)
 }
 func TestNewParse(t *testing.T) {
