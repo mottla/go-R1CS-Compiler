@@ -51,7 +51,7 @@ func TestArrayProgram(t *testing.T) {
 	code := `
 	func main(x bool,z field) (field) {
 		var ca = [2]field{33,44}
-		var a = [2][2]bool{ [2]bool{true,false}, [2]bool{true,false}}
+		#var a = [2][2]bool{ [2]bool{true,false}, [2]bool{true,false}}
 		z = z*ca[1]
 		ca[1] = 66
 		z = z*ca[1]

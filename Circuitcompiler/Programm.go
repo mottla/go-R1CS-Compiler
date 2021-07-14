@@ -146,71 +146,83 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 			bund, _ := currentCircuit.compile(v, gateCollector)
 			r = append(r, bund...)
 		}
-		//for _, v := range currentConstraint.FktInputs {
-		//	bund, _ := v.execute(gateCollector)
+		//for _, overloadEntrie := range currentConstraint.FktInputs {
+		//	bund, _ := overloadEntrie.execute(gateCollector)
 		//	r = append(r, bund...)
 		//}
 		return r, true
 	case VARIABLE_OVERLOAD:
 
 		//I am not sure if I should execute the new assigned variables
-		//var bund bundle
-		//for _, c := range currentConstraint.Inputs[1].Inputs {
-		//	re, _ := currentCircuit.compile(c, gateCollector)
-		//	bund = append(bund, re...)
-		//}
+		var bund bundle
+		for _, c := range currentConstraint.Inputs[1].Inputs {
+			re, _ := currentCircuit.compile(c, gateCollector)
+			bund = append(bund, re...)
+		}
 
 		//range over the variables to overload
-		for i, v := range currentConstraint.Inputs[0].Inputs {
+		for i, overloadEntrie := range currentConstraint.Inputs[0].Inputs {
 
-			var toOverloadIdentifier = v.Description.Identifier
+			var toOverloadIdentifier = overloadEntrie.Description.Identifier
 			f, ex := currentCircuit.findFunctionInBloodline(toOverloadIdentifier)
+			if !ex {
+				panic("")
+			}
+			context, ex := currentCircuit.getCircuitContainingFunctionInBloodline(toOverloadIdentifier)
 
 			if !ex {
 				panic("")
 			}
-			if v.Description.Type == ARRAY_CALL {
-				s, vals := f.taskStack.PeekLast()
+			if overloadEntrie.Description.Type == ARRAY_CALL {
+				//hmm I dont think we should clone the entire array when we overload a single value.
+				s, arrayEntries := f.taskStack.PeekLast()
 				if !s || len(f.Dimension) == 0 {
 					panic("")
 				}
-				toOverload := getArrayElement(currentCircuit.resolveArrayName(v.Inputs), vals.Inputs)
-				*toOverload = *currentConstraint.Inputs[1].Inputs[i]
+				toOverload := getArrayElement(currentCircuit.resolveArrayName(overloadEntrie.Inputs), arrayEntries.Inputs)
+				var assign *function
+				if bund[i].facs == nil {
+					assign = bund[i].preloadedFunction
+				} else {
+					assign = bund[i].facs.primitiveReturnfunction()
+				}
+				_, t := assign.taskStack.PeekLast()
+				*toOverload = *t
 				//arrays store their elements in the taks tree that is supposed to be the only element in the task stack
 
 			} else {
-				*f.taskStack = *newWatchstack().add(currentConstraint.Inputs[1].Inputs[i])
+				//*f = *currentConstraint.Inputs[1].Inputs[i]
+				//nc := f.CopyHeaderOnly()
+				//nc.Context = currentCircuit
+				//nc.taskStack = newWatchstack().add(currentConstraint.Inputs[1].Inputs[i])
+				//*f.taskStack = *newWatchstack().add(currentConstraint.Inputs[1].Inputs[i])
 				//context, ex := currentCircuit.getCircuitContainingFunctionInBloodline(toOverloadIdentifier)
 				//if !ex {
 				//	panic("should be cought at parsing already")
 				//}
 				////fkt, _ := context.functions[toOverloadIdentifier]
-				//var assign *function
-				//if bund[i].facs == nil {
-				//	assign = bund[i].preloadedFunction
-				//} else {
-				//	assign = bund[i].facs.primitiveReturnfunction()
-				//}
+				var assign *function
+				if bund[i].facs == nil {
+					assign = bund[i].preloadedFunction
+				} else {
+					assign = bund[i].facs.primitiveReturnfunction()
+				}
 				//
-				//context.functions[toOverloadIdentifier] = assign
+				context.functions[toOverloadIdentifier] = assign
 
 			}
 
 		}
 		return emptyRets()
 	case ARRAY_CALL:
-		//var id string
-		//if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Description.Identifier); !ex {
-		//	id = currentConstraint.Description.Identifier
-		//} else {
-		//	id = f.Name
-		//}
-		//resolvedName := currentCircuit.resolveArrayName(id, currentConstraint.Inputs)
-		//if f, ex := currentCircuit.findFunctionInBloodline(resolvedName); ex {
-		//	return f.execute(gateCollector)
-		//}
+		f, _ := currentCircuit.findFunctionInBloodline(currentConstraint.Description.Identifier)
 
-		//panic(fmt.Sprintf("array %s not declared", resolvedName))
+		s, arrayEntries := f.taskStack.PeekLast()
+		if !s || len(f.Dimension) == 0 {
+			panic("")
+		}
+		toOverload := getArrayElement(currentCircuit.resolveArrayName(currentConstraint.Inputs), arrayEntries.Inputs)
+		return currentCircuit.compile(toOverload, gateCollector)
 
 	case IF_FUNCTION_CALL:
 
@@ -302,10 +314,10 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 		switch currentConstraint.Description.Identifier {
 		case "BREAK":
 			// DEBUG function. Set a break point somewhere and read all arguments that were passed to BREAK(args...)
-			//for _, v := range currentConstraint.InputTypes {
-			//	//in, _, _ := currentCircuit.compile(v.clone(), gateCollector)
+			//for _, overloadEntrie := range currentConstraint.InputTypes {
+			//	//in, _, _ := currentCircuit.compile(overloadEntrie.clone(), gateCollector)
 			//	//
-			//	//st := fmt.Sprintf("%v , %v", v.String(), in)
+			//	//st := fmt.Sprintf("%overloadEntrie , %overloadEntrie", overloadEntrie.String(), in)
 			//	//fmt.Println(st)
 			//}
 			//break point
@@ -448,9 +460,9 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 	//		out := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
 	//		//if we ever want to access the bits of this new derived expression
 	//		//we give back the bits we already computed
-	//		// var v = x<<3, v[3] = x[0]
+	//		// var overloadEntrie = x<<3, overloadEntrie[3] = x[0]
 	//		for i := int(shift); i < len(bitsLeft)-int(shift); i++ {
-	//			currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[i-int(shift)].primitiveReturnfunction()
+	//			currentCircuit.functions[fmt.Sprintf("%overloadEntrie[%overloadEntrie]", out.Identifier, i)] = bitsLeft[i-int(shift)].primitiveReturnfunction()
 	//		}
 	//		return rets(out.toFactors(), nil), false
 	//	case ">>":
@@ -468,9 +480,9 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 	//		out := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
 	//		//if we ever want to access the bits of this new derived expression
 	//		//we give back the bits we already computed
-	//		// var v = x>>3, v[0] = x[3]
+	//		// var overloadEntrie = x>>3, overloadEntrie[0] = x[3]
 	//		for i := 0; i < len(bitsLeft)-int(shift); i++ {
-	//			currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[i+int(shift)].primitiveReturnfunction()
+	//			currentCircuit.functions[fmt.Sprintf("%overloadEntrie[%overloadEntrie]", out.Identifier, i)] = bitsLeft[i+int(shift)].primitiveReturnfunction()
 	//
 	//		}
 	//		return rets(out.toFactors(), nil), false
@@ -489,9 +501,9 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 	//		out := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
 	//		//if we ever want to access the bits of this new derived expression
 	//		//we give back the bits we already computed
-	//		// var v = x>>3, v[0] = x[3]
+	//		// var overloadEntrie = x>>3, overloadEntrie[0] = x[3]
 	//		for i := 0; i < len(bitsLeft); i++ {
-	//			currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[utils.Mod(i+int(shift), len(bitsLeft))].primitiveReturnfunction()
+	//			currentCircuit.functions[fmt.Sprintf("%overloadEntrie[%overloadEntrie]", out.Identifier, i)] = bitsLeft[utils.Mod(i+int(shift), len(bitsLeft))].primitiveReturnfunction()
 	//
 	//		}
 	//		return rets(out.toFactors(), nil), false
@@ -511,7 +523,7 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 	//		//if we ever want to access the bits of this new derived expression
 	//		//we give back the bits we already computed
 	//		for i := 0; i < len(bitsLeft); i++ {
-	//			currentCircuit.functions[fmt.Sprintf("%v[%v]", out.Identifier, i)] = bitsLeft[utils.Mod(i-int(shift), len(bitsLeft))].primitiveReturnfunction()
+	//			currentCircuit.functions[fmt.Sprintf("%overloadEntrie[%overloadEntrie]", out.Identifier, i)] = bitsLeft[utils.Mod(i-int(shift), len(bitsLeft))].primitiveReturnfunction()
 	//
 	//		}
 	//		return rets(out.toFactors(), nil), false
@@ -519,42 +531,42 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 	//		_, _, xorIDs := currentCircuit.xor(currentConstraint, gateCollector)
 	//
 	//		bitsScaled := make(Tokens, len(xorIDs))
-	//		for i, v := range xorIDs {
-	//			bitsScaled[i] = v.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
+	//		for i, overloadEntrie := range xorIDs {
+	//			bitsScaled[i] = overloadEntrie.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
 	//		}
 	//		eq := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
 	//
 	//		//say we split var x, from now on we can call x[i] to get the i'th bit
-	//		for i, v := range xorIDs {
-	//			currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
+	//		for i, overloadEntrie := range xorIDs {
+	//			currentCircuit.functions[fmt.Sprintf("%overloadEntrie[%overloadEntrie]", eq.Identifier, i)] = overloadEntrie.primitiveReturnfunction()
 	//		}
 	//		return rets(eq.toFactors(), nil), false
 	//	case "&": //bitwise and
 	//		_, _, andIDs := currentCircuit.and(currentConstraint, gateCollector)
 	//
 	//		bitsScaled := make(Tokens, len(andIDs))
-	//		for i, v := range andIDs {
-	//			bitsScaled[i] = v.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
+	//		for i, overloadEntrie := range andIDs {
+	//			bitsScaled[i] = overloadEntrie.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
 	//		}
 	//		eq := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
 	//
 	//		//say we split var x, from now on we can call x[i] to get the i'th bit
-	//		for i, v := range andIDs {
-	//			currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
+	//		for i, overloadEntrie := range andIDs {
+	//			currentCircuit.functions[fmt.Sprintf("%overloadEntrie[%overloadEntrie]", eq.Identifier, i)] = overloadEntrie.primitiveReturnfunction()
 	//		}
 	//		return rets(eq.toFactors(), nil), false
 	//	case "|": //bitwise or
 	//		_, _, andIDs := currentCircuit.or(currentConstraint, gateCollector)
 	//
 	//		bitsScaled := make(Tokens, len(andIDs))
-	//		for i, v := range andIDs {
-	//			bitsScaled[i] = v.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
+	//		for i, overloadEntrie := range andIDs {
+	//			bitsScaled[i] = overloadEntrie.CopyAndSetMultiplicative(new(big.Int).Lsh(bigOne, uint(i)))
 	//		}
 	//		eq := gateCollector.Add(multiplicationGate(bitsScaled, Token{Type: DecimalNumberToken}.toFactors()))
 	//
 	//		//say we split var x, from now on we can call x[i] to get the i'th bit
-	//		for i, v := range andIDs {
-	//			currentCircuit.functions[fmt.Sprintf("%v[%v]", eq.Identifier, i)] = v.primitiveReturnfunction()
+	//		for i, overloadEntrie := range andIDs {
+	//			currentCircuit.functions[fmt.Sprintf("%overloadEntrie[%overloadEntrie]", eq.Identifier, i)] = overloadEntrie.primitiveReturnfunction()
 	//		}
 	//		return rets(eq.toFactors(), nil), false
 	//	}

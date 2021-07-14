@@ -198,6 +198,38 @@ func (currentCircuit *function) getCircuitContainingFunctionInBloodline(identifi
 	return currentCircuit.Context.getCircuitContainingFunctionInBloodline(identifier)
 
 }
+func (circ *function) CopyHeaderOnly() (clone *function) {
+	if circ == nil {
+		return nil
+	}
+	clone = NewCircuit(circ.Name, circ.Context)
+	argumentIdentifiers := make([]string, len(circ.InputIdentifiers))
+	clone.skipLoadVerification = circ.skipLoadVerification
+	copy(argumentIdentifiers, circ.InputIdentifiers)
+	clone.Dimension = make([]int64, len(circ.Dimension))
+	copy(clone.Dimension, circ.Dimension)
+
+	clone.InputIdentifiers = argumentIdentifiers
+
+	outputs := make([]returnTypes, len(circ.OutputTypes))
+	clone.OutputTypes = outputs
+
+	for k, v := range circ.OutputTypes {
+		outputs[k] = v
+
+	}
+	inputs := make([]returnTypes, len(circ.InputTypes))
+	clone.InputTypes = inputs
+
+	for k, v := range circ.InputTypes {
+		inputs[k] = v
+	}
+	for k, v := range circ.functions {
+		clone.functions[k] = v
+	}
+
+	return
+}
 
 func (circ *function) flatCopy() (clone *function) {
 	if circ == nil {
@@ -229,7 +261,7 @@ func (circ *function) flatCopy() (clone *function) {
 		clone.functions[k] = v
 	}
 
-	clone.taskStack = circ.taskStack
+	clone.taskStack = circ.taskStack.clone()
 	return
 }
 

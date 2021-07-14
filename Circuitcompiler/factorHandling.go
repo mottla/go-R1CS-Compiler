@@ -176,8 +176,11 @@ func (from Tokens) primitiveReturnfunction() (gives *function) {
 	if len(from) == 1 {
 		return from[0].primitiveReturnfunction()
 	}
-	panic("")
-	//return combineFunctions("+", from[0].primitiveReturnfunction(), from[1:].primitiveReturnfunction())
+
+	return combineFunctions(Token{
+		Type:       ArithmeticOperatorToken,
+		Identifier: "+",
+	}, from[0].primitiveReturnfunction(), from[1:].primitiveReturnfunction(), &function{})
 
 }
 
