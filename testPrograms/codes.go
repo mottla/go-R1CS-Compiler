@@ -39,7 +39,7 @@ var sudoku = func() []*big.Int {
 var TestPrograms = []TraceCorrectnessTest{
 
 	{
-		Skip: false,
+		Skip: true,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(3))},
 		}},
@@ -200,23 +200,23 @@ func constraint(x){
 `},
 
 	{
-		Skip: true,
+		Skip: false,
 		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(1))},
+			Inputs: []*big.Int{big.NewInt(int64(2))},
 		}},
 
 		Code: `
 
-func main(x field){
+func main(x field) field{
 	public{x}
-	return (1*fubunaci(8,x))
+	return fubunaci(3,3)*x*x
 }
 
-func fubunaci(a field,v field){
-	var dyn = []field{v,v}
-	var i = 2
-	for (i<a;i=i+1){
-		var n = addGateConstraint(dyn[0],dyn[1])
+func fubunaci(a field,v field) field{
+	var dyn = [2]field{v,v}
+	
+	for (var i = 2 ; i<a; i =i+1){
+		var n = (dyn[0] + dyn[1])
 		dyn[0] = dyn[1]
 		dyn[1] = n
 	}

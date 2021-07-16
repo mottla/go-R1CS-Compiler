@@ -77,23 +77,22 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 		panic(fmt.Sprintf("variable %s not declared", currentConstraint.Description.Identifier))
 	case FOR:
 		//we check the condition each time we rerun the loop
-		//isStatic, isSat := currentCircuit.checkStaticCondition(currentConstraint.InputTypes[0])
-		//for isSat && isStatic {
-		//	content := &Task{
-		//		Description: Token{
-		//			Type:       FUNCTION_CALL,
-		//			Identifier: currentConstraint.Description.Identifier,
-		//		},
-		//	}
-		//	f, retu, fkt := currentCircuit.compile(content, gateCollector)
-		//	if retu {
-		//		return rets(f, true, fkt)
-		//	}
-		//	//the increment condition i += 1
-		//	currentCircuit.compile(currentConstraint.InputTypes[1], gateCollector)
-		//	isStatic, isSat = currentCircuit.checkStaticCondition(currentConstraint.InputTypes[0])
-		//}
-		//return nil, false, nil
+		isStatic, isSat := currentCircuit.checkStaticCondition(currentConstraint.Inputs[0])
+		if !isStatic {
+			panic("dynamic looping not yet supported")
+		}
+		for ; isSat && isStatic; isStatic, isSat = currentCircuit.checkStaticCondition(currentConstraint.Inputs[0]) {
+			if !isStatic {
+				panic("dynamic looping not yet supported")
+			}
+			//execture the statement inside the for brakets {}
+			bd, returns := currentCircuit.compile(currentConstraint.Inputs[1], gateCollector)
+			if returns {
+				return bd, true
+			}
+			//the increment condition is already inside the statements end
+		}
+		return emptyRets()
 	case UNASIGNEDVAR:
 		switch len(currentConstraint.Inputs) {
 		case 0:
@@ -138,7 +137,13 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 			preloadedFunction: currentConstraint.FktInputs[0],
 		}}, false
 	case VARIABLE_DECLARE:
-		fmt.Println("")
+		currentCircuit.compile(currentConstraint.Inputs[0], gateCollector)
+		return emptyRets()
+	case ARRAY_DECLARE:
+		for _, v := range currentConstraint.Inputs {
+			currentCircuit.compile(v, gateCollector)
+		}
+		return emptyRets()
 	case RETURN:
 		var r = []returnTyped{}
 
@@ -174,11 +179,10 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 				panic("")
 			}
 			if overloadEntrie.Description.Type == ARRAY_CALL {
-				//hmm I dont think we should clone the entire array when we overload a single value.
 				s, arrayEntries := f.taskStack.PeekLast()
 				if !s || len(f.Dimension) == 0 {
 					panic("")
-				}
+				}asdfasdf
 				toOverload := getArrayElement(currentCircuit.resolveArrayName(overloadEntrie.Inputs), arrayEntries.Inputs)
 				var assign *function
 				if bund[i].facs == nil {
@@ -189,29 +193,15 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 				_, t := assign.taskStack.PeekLast()
 				*toOverload = *t
 				//arrays store their elements in the taks tree that is supposed to be the only element in the task stack
-
 			} else {
-				//*f = *currentConstraint.Inputs[1].Inputs[i]
-				//nc := f.CopyHeaderOnly()
-				//nc.Context = currentCircuit
-				//nc.taskStack = newWatchstack().add(currentConstraint.Inputs[1].Inputs[i])
-				//*f.taskStack = *newWatchstack().add(currentConstraint.Inputs[1].Inputs[i])
-				//context, ex := currentCircuit.getCircuitContainingFunctionInBloodline(toOverloadIdentifier)
-				//if !ex {
-				//	panic("should be cought at parsing already")
-				//}
-				////fkt, _ := context.functions[toOverloadIdentifier]
 				var assign *function
 				if bund[i].facs == nil {
 					assign = bund[i].preloadedFunction
 				} else {
 					assign = bund[i].facs.primitiveReturnfunction()
 				}
-				//
 				context.functions[toOverloadIdentifier] = assign
-
 			}
-
 		}
 		return emptyRets()
 	case ARRAY_CALL:
@@ -364,6 +354,7 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 					panic("")
 				}
 				nextCircuit = currentConstraint.FktInputs[0]
+				nextCircuit.Context = currentCircuit
 			} else if nextCircuit, ex = currentCircuit.findFunctionInBloodline(currentConstraint.Description.Identifier); !ex {
 				panic(fmt.Sprintf("function %s not declared", currentConstraint.Description.Identifier))
 			}
@@ -585,8 +576,11 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 			if len(leftFactors) != 1 || len(rightFactors) != 1 {
 				panic("")
 			}
-			if !leftFactors[0].facs.containsArgument() || !rightFactors[0].facs.containsArgument() {
-				return rets(mulFactors(leftFactors.fac(), rightFactors.fac()), nil), currentConstraint.Description.Type == RETURN
+			if !leftFactors[0].facs.containsArgument() {
+				return rets(mulFactor(rightFactors.fac(), leftFactors.fac()[0]), nil), currentConstraint.Description.Type == RETURN
+
+			} else if !rightFactors[0].facs.containsArgument() {
+				return rets(mulFactor(leftFactors.fac(), rightFactors.fac()[0]), nil), currentConstraint.Description.Type == RETURN
 			}
 			commonFactor, newLeft, newRight := extractConstant(leftFactors.fac(), rightFactors.fac())
 			mGate := multiplicationGate(newLeft, newRight)
@@ -603,7 +597,7 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 			}
 
 			if !rightFactors[0].facs.containsArgument() { // (x1+x2..)/6
-				return rets(divideFactors(leftFactors.fac(), (rightFactors.fac()[0])), nil), currentConstraint.Description.Type == RETURN
+				return rets(divideFactors(leftFactors.fac(), rightFactors.fac()[0]), nil), currentConstraint.Description.Type == RETURN
 			}
 
 			gcdl, facL := factorSignature(leftFactors.fac())

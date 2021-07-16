@@ -150,11 +150,9 @@ func (p *Parser) parseExpression(stack []Token, context *function, in *Task) (ou
 
 FKTCALL:
 	if stack[0].Identifier == "(" && outFktSignature != nil {
-
+		in.Description.Type = FUNCTION_CALL
 		rest, argFks, argConst := p.parseArguments(context, stack[1:], splitAtClosingBrackets)
 		stack = rest
-
-		in.Description.Type = FUNCTION_CALL
 		in.Inputs = append(in.Inputs, argConst...)
 		outFktSignature.getsLoadedWith(argFks)
 		//whats the taskmap here?
@@ -172,11 +170,10 @@ FKTCALL:
 
 ARYCALL:
 	if stack[0].Identifier == "[" && outFktSignature != nil {
-
+		in.Description.Type = ARRAY_CALL
 		if len(outFktSignature.Dimension) == 0 {
 			p.error("not an array")
 		}
-		in.Description.Type = ARRAY_CALL
 
 		left, rest, success := splitAtClosingSquareBrackets(stack)
 		stack = rest
@@ -208,6 +205,7 @@ ARYCALL:
 	}
 
 	if stack[0].Type == FUNCTION_DEFINE {
+		in.Description.Type = FUNCTION_DEFINE
 
 		p.Assert("(", stack[1])
 		inside, statement := splitAtFirstHighestStringType(stack[1:], "{")
@@ -215,7 +213,7 @@ ARYCALL:
 		p.PrepareFunctionSignature(outFktSignature, inside)
 
 		//dont need this
-		in.Description.Type = FUNCTION_CALL
+
 		in.FktInputs = append(in.FktInputs, outFktSignature)
 
 		var s bool
@@ -252,8 +250,6 @@ ARYCALL:
 		return
 	}
 
-	//
-	////null pointer exception incoming in 3.2.1..
 	if stack[0].Identifier == "{" {
 
 		//if something is in brackest, we expect all of
@@ -271,7 +267,7 @@ ARYCALL:
 
 		//all returned args must be of equal type
 		for i := 1; i < len(argFkts); i++ {
-			if eq, err := argFkts[i-1].hasEqualDescription(argFkts[i]); !eq {
+			if eq, err := argFkts[i].hasEqualDescription(argFkts[i-1]); !eq {
 				p.error(err)
 			}
 		}
@@ -285,6 +281,7 @@ ARYCALL:
 	//
 
 	if stack[0].Identifier == "[" {
+		in.Description.Type = ARRAY_DECLARE
 		//var a = [2]func(a bool)(bool){}
 
 		//we will return an empty constraint. thats fo sure
@@ -644,9 +641,110 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 
 		return
 	case FOR:
-		// TODO for loops a just syntactic suggar for a recursive function
+		forFkt := NewCircuit("forLoop", currentCircuit)
+		//we Add the function
+		//currentCircuit.functions[fkt.Name] = fkt
+		currentCircuit.taskStack.add(&Task{
+			Description: Token{
+				Type: FUNCTION_CALL,
+			},
+			FktInputs: []*function{forFkt},
+		})
 
-		break
+		// for a ; b ;c {  rest
+		condition, rest := splitAtFirstHighestStringType(tokens[1:], "{")
+
+		re := &Task{
+			Description: Token{
+				Type: FOR,
+			},
+			Inputs: make([]*Task, 2),
+			//inputs are the condition + optional assignment after the loop
+			//fktInput is all inside the for statement {}
+		}
+		forFkt.taskStack.add(re)
+
+		// a ; b ;c
+		var arguments []Tokens
+		condition = stripOfBrackets(condition)
+		for argument, remm := splitAtFirstHighestStringType(condition, ";"); len(arguments) < 3; argument, remm = splitAtFirstHighestStringType(remm, ";") {
+			argument = removeLeadingAndTrailingBreaks(argument)
+			arguments = append(arguments, argument)
+			if remm == nil {
+				break
+			}
+		}
+		switch len(arguments) {
+		case 1: // a
+			constr := &Task{}
+			f := p.parseExpression(arguments[0], forFkt, constr)
+			re.Inputs[0] = constr
+			if b, err := f.HasBooleanOutput(); !b {
+				panic(err)
+			}
+
+			// insideFor } rest
+			insideFor, r, success := splitAtClosingSwingBrackets(rest)
+			rest = r
+			if !success {
+				panic("closing brackets missing")
+			}
+
+			stm := NewCircuit("forStatement", forFkt)
+			p.PreCompile(stm, insideFor)
+			re.Inputs[1] = &Task{
+				Description: Token{
+					Type: FUNCTION_CALL,
+				},
+				FktInputs: []*function{stm},
+			}
+		case 3: // a ; b ;c
+
+			//a
+			p.PreCompile(forFkt, arguments[0])
+
+			if b, t := forFkt.taskStack.PeekLast(); !b || (t.Description.Type != VARIABLE_DECLARE) && (t.Description.Type != VARIABLE_OVERLOAD) {
+				panic("for either takes 1 boolean expression, or 3 expressions, where the first is an assignment, second a boolean condition, third an assignment")
+			}
+
+			//b
+			constr := &Task{}
+			f := p.parseExpression(arguments[1], forFkt, constr)
+			re.Inputs[0] = constr
+			if b, err := f.HasBooleanOutput(); !b {
+				panic(err)
+			}
+
+			// insideFor } rest
+			insideFor, r, success := splitAtClosingSwingBrackets(rest)
+			rest = r
+			if !success {
+				panic("closing brackets missing")
+			}
+
+			stm := NewCircuit("forStatement", forFkt)
+			p.PreCompile(stm, insideFor)
+			re.Inputs[1] = &Task{
+				Description: Token{
+					Type: FUNCTION_CALL,
+				},
+				FktInputs: []*function{stm},
+			}
+			//c
+			if arguments[2].Len() != 0 {
+				p.PreCompile(stm, arguments[2])
+				b, t := forFkt.taskStack.PeekLast()
+				if !b || (t.Description.Type != VARIABLE_DECLARE) && (t.Description.Type != VARIABLE_OVERLOAD) {
+					panic("for either takes 1 boolean expression, or 3 expressions, where the first is an assignment, second a boolean condition, third an assignment")
+				}
+			}
+		default:
+			panic("")
+		}
+		p.PreCompile(currentCircuit, rest)
+
+		return
+
 	case RETURN:
 		re := &Task{
 			Description: Token{
@@ -763,6 +861,8 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 		//var a = []bool{true}
 		//var a = func()(bool) {return 0/1}
 		//var a = func(x field,y field)(bool) {return 0/1}
+		//TODO     var a,b = true,true ... lets reuse the reassign part
+		//
 		assignmentLine, afterBreak := splitAtFirstHighestStringType(tokens, "\n")
 
 		lhs, rhs := splitTokensAtFirstString(assignmentLine, "=")
@@ -779,8 +879,13 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 			panic(fmt.Sprintf("variable %s already declared", id.Identifier))
 		}
 		//if ctr is not empty, then we add a task.
-		ctr := &Task{}
-		fkt := p.parseExpression(rhs[1:], currentCircuit, ctr)
+		ctr := &Task{
+			Description: Token{
+				Type: VARIABLE_DECLARE,
+			},
+			Inputs: []*Task{&Task{}},
+		}
+		fkt := p.parseExpression(rhs[1:], currentCircuit, ctr.Inputs[0])
 		currentCircuit.taskStack.add(ctr)
 		fkt.Name = id.Identifier
 		//we add the function after we parse, to avoid self reference such as  var a = a

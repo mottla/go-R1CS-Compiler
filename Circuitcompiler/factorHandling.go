@@ -36,6 +36,9 @@ func (f Tokens) containsArgument() bool {
 	if len(f) == 0 {
 		return false
 	}
+	if len(f) != 1 {
+		panic("not expected")
+	}
 	for _, v := range f {
 		if v.isArgument {
 			return true
@@ -133,11 +136,20 @@ func mulFactors(leftFactors, rightFactors Tokens) (result Tokens) {
 	}
 	return leftFactors
 }
+func mulFactor(factors Tokens, multipl Token) (result Tokens) {
+
+	for i, left := range factors {
+
+		factors[i] = factors[i].CopyAndSetMultiplicative(mulType(multipl.value, left.value, left.Type))
+
+	}
+	return factors
+}
 func divideFactors(leftFactors Tokens, rightFactor Token) (result Tokens) {
 
 	for i, left := range leftFactors {
 
-		leftFactors[i] = leftFactors[i].CopyAndSetMultiplicative(divType(rightFactor.value, left.value, rightFactor.Type))
+		leftFactors[i] = leftFactors[i].CopyAndSetMultiplicative(divType(rightFactor.value, left.value, left.Type))
 
 	}
 	return leftFactors

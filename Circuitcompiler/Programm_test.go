@@ -10,7 +10,7 @@ import (
 
 func TestStaticIfProgram(t *testing.T) {
 	code := `
-	func main(x bool,y field)(field) {
+	func main(x field,y field)(field) {
 		if 2>3 {
 			return x*x
 		}
@@ -19,9 +19,9 @@ func TestStaticIfProgram(t *testing.T) {
 		}else if 5!=5{
 			return x*x*x
 		}else if 5==5{
-			return y*y*y
+			x=y*y
 		}
-		return x*x*x
+		return x*x
 	}
 
 `
@@ -37,24 +37,15 @@ func TestStaticIfProgram(t *testing.T) {
 	fmt.Println(r1cs.R)
 	fmt.Println(r1cs.O)
 }
-func TestFunction_SPLIT(t *testing.T) {
-
-	switch a := FIELD; a {
-	case DecimalNumberToken:
-		fmt.Println("d")
-	case FIELD | U64:
-		fmt.Println("s")
-	}
-}
 
 func TestArrayProgram(t *testing.T) {
 	code := `
 	func main(x bool,z field) (field) {
-		var ca = [2]field{33,44}
-		#var a = [2][2]bool{ [2]bool{true,false}, [2]bool{true,false}}
-		z = z*ca[1]
-		ca[1] = 66
-		z = z*ca[1]
+		var caa = [2]field{33,44}
+		var ca = [2][2]field{ caa, [2]field{55,44}}
+		z = z*ca[1][1]
+		ca[1][1] = 66
+		z = z*ca[1][1]
 		z = z*z
 		return z
 	}

@@ -6,8 +6,6 @@ import (
 	"strings"
 )
 
-var variableIndicationSign = "@"
-
 // function is the data structure of the compiled circuit
 type function struct {
 	Name string
@@ -468,6 +466,15 @@ func (currentCircuit *function) execute(gateCollector *gateContainer) (bundle, b
 		}
 		//gateCollector.completeFunction(f)
 	}
+
+	//the function had no return call
+
+	//now there is some unelegant shit going on.
+	if len(currentCircuit.OutputTypes) == 0 {
+		return emptyRets()
+	}
+
+	//we have this cuz there are the inputa variables. TODO find a better way how to treat input variables
 	t := currentCircuit.OutputTypes[0].typ.copy()
 	t.Identifier = currentCircuit.Name
 	return bundle{returnTyped{
