@@ -137,13 +137,18 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 			preloadedFunction: currentConstraint.FktInputs[0],
 		}}, false
 	case VARIABLE_DECLARE:
-		currentCircuit.compile(currentConstraint.Inputs[0], gateCollector)
-		return emptyRets()
+		return currentCircuit.compile(currentConstraint.Inputs[0], gateCollector)
 	case ARRAY_DECLARE:
 		for _, v := range currentConstraint.Inputs {
 			currentCircuit.compile(v, gateCollector)
 		}
-		return emptyRets()
+		// this is a bit hacky
+		rets := currentConstraint.FktInputs[0].CopyHeaderOnly()
+		rets.taskStack = &watchstack{data: []*Task{currentConstraint}}
+		return bundle{returnTyped{
+			facs:              nil,
+			preloadedFunction: rets,
+		}}, false
 	case RETURN:
 		var r = []returnTyped{}
 
@@ -169,21 +174,23 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 		for i, overloadEntrie := range currentConstraint.Inputs[0].Inputs {
 
 			var toOverloadIdentifier = overloadEntrie.Description.Identifier
-			f, ex := currentCircuit.findFunctionInBloodline(toOverloadIdentifier)
+			toOverloadFunktion, ex := currentCircuit.findFunctionInBloodline(toOverloadIdentifier)
 			if !ex {
 				panic("")
 			}
-			context, ex := currentCircuit.getCircuitContainingFunctionInBloodline(toOverloadIdentifier)
+			contextOfOverloadFunktion, ex := currentCircuit.getCircuitContainingFunctionInBloodline(toOverloadIdentifier)
 
 			if !ex {
 				panic("")
 			}
+
+			// ca[32] = x
 			if overloadEntrie.Description.Type == ARRAY_CALL {
-				s, arrayEntries := f.taskStack.PeekLast()
-				if !s || len(f.Dimension) == 0 {
+				s, arrayEntries := toOverloadFunktion.taskStack.PeekLast()
+				if !s || len(toOverloadFunktion.Dimension) == 0 {
 					panic("")
-				}asdfasdf
-				toOverload := getArrayElement(currentCircuit.resolveArrayName(overloadEntrie.Inputs), arrayEntries.Inputs)
+				}
+				toOverloadArrayNode := getArrayElement(currentCircuit.resolveArrayName(overloadEntrie.Inputs), arrayEntries.Inputs)
 				var assign *function
 				if bund[i].facs == nil {
 					assign = bund[i].preloadedFunction
@@ -191,7 +198,7 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 					assign = bund[i].facs.primitiveReturnfunction()
 				}
 				_, t := assign.taskStack.PeekLast()
-				*toOverload = *t
+				*toOverloadArrayNode = *t
 				//arrays store their elements in the taks tree that is supposed to be the only element in the task stack
 			} else {
 				var assign *function
@@ -200,7 +207,7 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 				} else {
 					assign = bund[i].facs.primitiveReturnfunction()
 				}
-				context.functions[toOverloadIdentifier] = assign
+				contextOfOverloadFunktion.functions[toOverloadIdentifier] = assign
 			}
 		}
 		return emptyRets()
@@ -279,7 +286,7 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 						composed = combineFunctions(mulTok, composed, negatedCondition, currentCircuit)
 					}
 					f, _ := composed.execute(gateCollector)
-					result = (result.AddFactors(f.fac()))
+					result = result.AddFactors(f.fac())
 				}
 
 				//everything the statement returnes, must be multiplied with the condition
@@ -295,9 +302,7 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 					Identifier: "-",
 				}, one.primitiveReturnfunction(), conditionBund.fac().primitiveReturnfunction(), currentCircuit)
 				negatedConditions = append(negatedConditions, negateFkt)
-
 			}
-
 		}
 		return emptyRets()
 	case FUNCTION_CALL:
@@ -883,7 +888,9 @@ func newProgram() (program *Program) {
 		PublicInputs:   []string{"1"},
 	}
 	//handle the fixed functions.. either here or elsewhere
-	program.globalFunction.functions = predeclaredFunctionsMap
+	for k, v := range predeclaredFunctionsMap {
+		program.globalFunction.functions[k] = v
+	}
 	return
 }
 
@@ -926,6 +933,12 @@ func (p *Program) Execute() (orderedmGates *gateContainer) {
 	container := newGateContainer()
 	mainCircuit := p.GetMainCircuit()
 
+	//load the global variables
+	for _, taks := range p.globalFunction.taskStack.data {
+		p.globalFunction.compile(taks, container)
+	}
+
+	//execute the main function
 	for _, taks := range mainCircuit.taskStack.data {
 		bund, rt := mainCircuit.compile(taks, container)
 		container.completeFunction(bund.fac())

@@ -386,6 +386,7 @@ func (w *watchstack) addPrimitiveReturn(tok Token) {
 func (from Token) primitiveReturnfunction() (gives *function) {
 	rmp := NewCircuit(from.Identifier, nil)
 	//here do smthn..
+	//we store the value now twice. once in the return and once in the outputtype.. bad
 	rmp.OutputTypes = []returnTypes{{
 		functionReturn: false,
 		typ:            from,

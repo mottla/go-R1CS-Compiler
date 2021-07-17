@@ -76,6 +76,7 @@ func TestForProgram(t *testing.T) {
 	code := `
 	func main(x field,z field,y func(x bool)(bool))(func(a field)(bool)) {
 		#x,z = test()
+		var c = 5
 		var mul5 = mul(5)
 		x = mul5(square(x))
 		x = (square(x)-1)*square(x)
@@ -114,6 +115,12 @@ func TestForProgram(t *testing.T) {
 	fmt.Printf("witness len %v \n ", len(w))
 	fmt.Println(w)
 }
+
+func jese() {
+	fmt.Println(a)
+}
+
+var a = true
 
 func TestCorrectness(t *testing.T) {
 

@@ -310,9 +310,11 @@ ARYCALL:
 			p.error(err)
 		}
 		//not so smooth..
-		outFktSignature.taskStack = &watchstack{
-			data: []*Task{in},
-		}
+		//the problem is, that we need to store the array data somwhere..
+		//outFktSignature.taskStack = &watchstack{
+		//	data: []*Task{in},
+		//}
+		in.FktInputs = []*function{outFktSignature}
 		return outFktSignature
 	}
 
@@ -457,7 +459,7 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 		return
 	}
 
-	switch tokens[0].Type {
+	switch typ := tokens[0].Type; typ {
 	case PUBLIC:
 
 		if tokens[1].Identifier != "{" {
@@ -775,127 +777,139 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 
 		p.PreCompile(currentCircuit, tokens)
 		return
-	case IDENTIFIER_VARIABLE: //variable overloading -> a,b = a * 4 , 7
+	default:
 
-		overload, expr := splitAtFirstHighestStringType(tokens, "=")
-		toOverload := &Task{
-			Description: Token{
-				Type: UNASIGNEDVAR,
-			},
-		}
-		overloadWith := &Task{
-			Description: Token{
-				Type: RETURN,
-			},
-		}
-		varConst := &Task{
-			Description: Token{
-				Type: VARIABLE_OVERLOAD,
-			},
-			Inputs: []*Task{toOverload, overloadWith},
-		}
+		if typ == IDENTIFIER_VARIABLE || typ == VARIABLE_DECLARE {
 
-		for arguments, remm := splitAtFirstHighestStringType(overload, ","); ; arguments, remm = splitAtFirstHighestStringType(remm, ",") {
-			arguments = removeLeadingAndTrailingBreaks(arguments)
-			p.AssertTypes(arguments, IDENTIFIER_VARIABLE)
-			//the first token is the thing to overwrite
-			f, ex := currentCircuit.findFunctionInBloodline(arguments[0].Identifier)
-			if !ex {
-				p.error(fmt.Sprintf("variable %s not declared", arguments[0].Identifier))
+			if typ == VARIABLE_DECLARE {
+				tokens = tokens[1:]
 			}
-			constr := &Task{}
-			f = p.parseExpression(arguments, currentCircuit, constr)
 
-			toOverload.Inputs = append(toOverload.Inputs, constr)
-			toOverload.FktInputs = append(toOverload.FktInputs, f)
-			if remm == nil {
-				break
+			overload, expr := splitAtFirstHighestStringType(tokens, "=")
+			toOverload := &Task{
+				Description: Token{
+					Type: UNASIGNEDVAR,
+				},
 			}
-		}
-		currentCircuit.taskStack.add(varConst)
+			overloadWith := &Task{
+				Description: Token{
+					Type: RETURN,
+				},
+			}
+			varConst := &Task{
+				Description: Token{
+					Type: VARIABLE_OVERLOAD,
+				},
+				Inputs: []*Task{toOverload, overloadWith},
+			}
 
-		//observation
-		//we only us precompile for type checking and preparing the compilation tree
-		//in parseExpression we cannot reference to functions by address
-		//we still need to reference by name as we've done before.
-		//unless.. hmm no I think we must do it the old way. otherwise i
-		//see no chance how to du parallel calls such as in fibunacci a(x-1)+a(x-2)
-		//cuz in that case
+			for argument, remm := splitAtFirstHighestStringType(overload, ","); ; argument, remm = splitAtFirstHighestStringType(remm, ",") {
+				argument = removeLeadingAndTrailingBreaks(argument)
+				p.AssertTypes(argument, IDENTIFIER_VARIABLE)
+				id := argument[0]
+				var f *function
+				var ex bool
+				var constr = &Task{}
 
-		var found bool //we mimic golang but I dont see why this break of symmetry is needed
-		arguments, rest := splitAtFirstHighestStringType(expr, ",", "\n")
-		for ; ; arguments, rest = splitAtFirstHighestStringType(rest, ",", "\n") {
-			arguments = removeLeadingAndTrailingBreaks(arguments)
-			constr := &Task{}
-			fk := p.parseExpression(arguments, currentCircuit, constr)
-
-			//check if the assignment types match
-			if eq, _ := toOverload.FktInputs[0].hasEqualDescription(fk); eq {
-				toOverload.FktInputs = toOverload.FktInputs[1:]
-				found = true
-			} else {
-				if len(toOverload.Inputs) != len(fk.OutputTypes) || found {
-					p.error("assingment missmatch")
-				}
-				for i, f := range toOverload.FktInputs {
-					if eq, err := f.hasEqualDescription2(fk.OutputTypes[i]); !eq {
-						p.error(err)
+				if typ == IDENTIFIER_VARIABLE {
+					//the first token is the thing to overwrite
+					f, ex = currentCircuit.findFunctionInBloodline(id.Identifier)
+					if !ex {
+						p.error(fmt.Sprintf("variable %s not declared", id.Identifier))
 					}
+
+					//we also allow overload of array elements. thats why we need to parse in the IV case
+					f = p.parseExpression(argument, currentCircuit, constr)
+					toOverload.FktInputs = append(toOverload.FktInputs, f)
 				}
-				overloadWith.Inputs = append(overloadWith.Inputs, constr)
-				if len(toOverload.Inputs) == len(overloadWith.FktInputs) {
+
+				if typ == VARIABLE_DECLARE {
+					if len(argument) != 1 {
+						panic("pure identifier expected")
+					}
+
+					if _, ex := currentCircuit.functions[(id.Identifier)]; ex {
+						panic(fmt.Sprintf("variable %s already declared", id.Identifier))
+					}
+					if _, ex := predeclaredFunctionsMap[(id.Identifier)]; ex {
+						panic(fmt.Sprintf("cannot redeclare a predefined function. %s already declared", id.Identifier))
+					}
+					//add placeholder to avaid var a,a = sdaf
+					currentCircuit.functions[(id.Identifier)] = &function{}
+					constr = id.toConstraint()
+				}
+				toOverload.Inputs = append(toOverload.Inputs, constr)
+
+				if remm == nil {
 					break
 				}
-				break
 			}
-			overloadWith.Inputs = append(overloadWith.Inputs, constr)
-			if len(toOverload.Inputs) == len(overloadWith.Inputs) {
-				break
+			currentCircuit.taskStack.add(varConst)
+
+			var oneOnOneMapping bool //we mimic golang. either one to one assignments, or one to all
+			argument, rest := splitAtFirstHighestStringType(expr, ",", "\n")
+			for ; ; argument, rest = splitAtFirstHighestStringType(rest, ",", "\n") {
+				argument = removeLeadingAndTrailingBreaks(argument)
+				constr := &Task{}
+				fk := p.parseExpression(argument, currentCircuit, constr)
+
+				if typ == IDENTIFIER_VARIABLE {
+					//check if the assignment types match
+					if eq, _ := toOverload.FktInputs[0].hasEqualDescription(fk); eq {
+						toOverload.FktInputs = toOverload.FktInputs[1:]
+						overloadWith.Inputs = append(overloadWith.Inputs, constr)
+						// var a,b = c,d
+						oneOnOneMapping = true
+					} else {
+						// var a,b = f()
+						if len(toOverload.Inputs) != len(fk.OutputTypes) || oneOnOneMapping {
+							p.error("assingment missmatch")
+						}
+						for i, f := range toOverload.FktInputs {
+							if eq, err := f.hasEqualDescription2(fk.OutputTypes[i]); !eq {
+								p.error(err)
+							}
+						}
+						overloadWith.Inputs = []*Task{constr}
+						break
+					}
+
+					if len(toOverload.Inputs) == len(overloadWith.Inputs) {
+						break
+					}
+
+				}
+				//var f = func(bool) (bool,bool){return true,true}
+				//var a, b = f(true)
+				if typ == VARIABLE_DECLARE {
+					//var a,b = f()
+					if len(fk.OutputTypes) == len(toOverload.Inputs) && len(fk.InputTypes) == 0 {
+						if oneOnOneMapping {
+							panic("")
+						}
+						for i, f := range toOverload.Inputs {
+							nfkt := fk.CopyHeaderOnly()
+							nfkt.OutputTypes = []returnTypes{nfkt.OutputTypes[i]}
+							currentCircuit.functions[f.Description.Identifier] = nfkt
+						}
+						overloadWith.Inputs = []*Task{constr}
+						break
+					}
+					//var a,b = c,d
+					oneOnOneMapping = true
+					currentCircuit.functions[toOverload.Inputs[len(overloadWith.Inputs)].Description.Identifier] = fk
+					overloadWith.Inputs = append(overloadWith.Inputs, constr)
+
+					if len(toOverload.Inputs) == len(overloadWith.Inputs) {
+						break
+					}
+				}
+
 			}
+			p.PreCompile(currentCircuit, rest)
+			return
 		}
-		p.PreCompile(currentCircuit, rest)
 
-		return
-	case VARIABLE_DECLARE:
-		//var a = smth
-		//var a = []bool{true}
-		//var a = func()(bool) {return 0/1}
-		//var a = func(x field,y field)(bool) {return 0/1}
-		//TODO     var a,b = true,true ... lets reuse the reassign part
-		//
-		assignmentLine, afterBreak := splitAtFirstHighestStringType(tokens, "\n")
-
-		lhs, rhs := splitTokensAtFirstString(assignmentLine, "=")
-
-		id := lhs[1]
-		p.AssertIdentifier(id)
-		if len(rhs[1:]) == 0 || len(lhs) != 2 {
-			p.error("assignment missing")
-		}
-		if _, ex := currentCircuit.functions[(id.Identifier)]; ex {
-			panic(fmt.Sprintf("variable %s already declared", id.Identifier))
-		}
-		if _, ex := predeclaredFunctionsMap[(id.Identifier)]; ex {
-			panic(fmt.Sprintf("variable %s already declared", id.Identifier))
-		}
-		//if ctr is not empty, then we add a task.
-		ctr := &Task{
-			Description: Token{
-				Type: VARIABLE_DECLARE,
-			},
-			Inputs: []*Task{&Task{}},
-		}
-		fkt := p.parseExpression(rhs[1:], currentCircuit, ctr.Inputs[0])
-		currentCircuit.taskStack.add(ctr)
-		fkt.Name = id.Identifier
-		//we add the function after we parse, to avoid self reference such as  var a = a
-		currentCircuit.functions[id.Identifier] = fkt
-
-		p.PreCompile(currentCircuit, afterBreak)
-
-		return
-
-	default:
 		p.error("%statement", tokens)
 	}
 	return
@@ -936,7 +950,7 @@ func (p *Parser) readStaticDimension(toks []Token, in []int64) (rest []Token, ou
 		p.error("")
 	}
 	if len(left) != 1 || left[0].Type != DecimalNumberToken {
-		p.error("integer expected")
+		p.error("Slice not supported. Only static arrays so far. Integer expected")
 	}
 	in = append(in, left[0].value.Int64())
 

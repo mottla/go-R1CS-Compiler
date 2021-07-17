@@ -39,7 +39,7 @@ var sudoku = func() []*big.Int {
 var TestPrograms = []TraceCorrectnessTest{
 
 	{
-		Skip: true,
+		Skip: false,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(3))},
 		}},
@@ -207,9 +207,9 @@ func constraint(x){
 
 		Code: `
 
-func main(x field) field{
-	public{x}
-	return fubunaci(3,3)*x*x
+func main(u field) field{
+	public{u}
+	return fubunaci(8,1)*u*u
 }
 
 func fubunaci(a field,v field) field{
@@ -224,41 +224,19 @@ func fubunaci(a field,v field) field{
 }
 `},
 	{
-		Skip: true,
-		IO: []InOut{{
-			Inputs: []*big.Int{big.NewInt(int64(1))},
-		}},
-
-		Code: `
-func main(x){
-	return (x*fubunaci(8,x))
-}
-
-func fubunaci(a,v){
-	var dyn[] = {v,v}
-	var i = 2
-	for (i<a;i=i+1){
-		var n = dyn[0]+dyn[1]
-		dyn[0] = dyn[1]
-		dyn[1] = n
-	}
-    return dyn[1]
-}
-`},
-	{
-		Skip: true,
+		Skip: false,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(3))},
 		}},
 
 		Code: `
-func main(x){
+func main(x field) field{
 	return (1*fubunaci(8))*(x*x)
 }
-var dyn[] = {1,1}
-func fubunaci(a){
-	var i = 2
-	for (i<a;i=i+1){
+var dyn = [2]field{1,1}
+func fubunaci(a field) field{
+	
+	for (var i = 2; i<a ; i=i+1){
 		var n = dyn[0]+dyn[1]
 		dyn[0] = dyn[1]
 		dyn[1] = n
@@ -268,19 +246,20 @@ func fubunaci(a){
 `},
 
 	{
-		Skip: true,
+		Skip: false,
 		IO: []InOut{{
 			Inputs: []*big.Int{big.NewInt(int64(3))},
 		}},
 
 		Code: `
-func main(x){
+func main(x field) field{
 	return (1*fubunaci(8))*(x*x)
 }
-var dyn[] = {1,1,0,0,0,0,0,0,0}
-func fubunaci(a){
-	var i = 2
-	for (i<a;i=i+1){
+var dyn = [9]field{1,1,0,0,0,0,0,0,0}
+
+func fubunaci(a field) field{
+	var i = 12
+	for (i = 2 ; i<a;i=i+1){
 		dyn[i] = dyn[i-1]+dyn[i-2]
 	}
     return dyn[a-1]

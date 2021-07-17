@@ -36,9 +36,9 @@ func (f Tokens) containsArgument() bool {
 	if len(f) == 0 {
 		return false
 	}
-	if len(f) != 1 {
-		panic("not expected")
-	}
+	//if len(f) != 1 {
+	//	panic("not expected")
+	//}
 	for _, v := range f {
 		if v.isArgument {
 			return true
