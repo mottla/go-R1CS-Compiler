@@ -393,7 +393,7 @@ func (p *Parser) prepareArguments(current *function, stack []Token) {
 
 	argument := NewCircuit(stack[0].Identifier, nil)
 	p.prepareType(argument, stack[1:])
-	if len(argument.InputTypes) == 0 && len(argument.OutputTypes) == 1 {
+	if len(argument.InputTypes) == 0 && len(argument.OutputTypes) == 1 && len(argument.Dimension) == 0 {
 		current.InputTypes = append(current.InputTypes, argument.OutputTypes[0])
 	} else {
 		current.InputTypes = append(current.InputTypes, returnTypes{
@@ -412,7 +412,7 @@ func (p *Parser) prepareReturns(current *function, stack []Token) {
 	}
 	argument := NewCircuit("", nil)
 	p.prepareType(argument, stack)
-	if len(argument.InputTypes) == 0 && len(argument.OutputTypes) == 1 {
+	if len(argument.InputTypes) == 0 && len(argument.OutputTypes) == 1 && len(argument.Dimension) == 0 {
 		current.OutputTypes = append(current.OutputTypes, argument.OutputTypes[0])
 	} else {
 		current.OutputTypes = append(current.OutputTypes, returnTypes{
@@ -424,11 +424,8 @@ func (p *Parser) prepareReturns(current *function, stack []Token) {
 
 }
 func (p *Parser) prepareType(argument *function, stack []Token) {
-	if stack[0].Identifier == "[" {
-		stack, argument.Dimension = p.readStaticDimension(stack, []int64{})
-	}
 
-	if stack[0].Type&Types != 0 {
+	if stack[0].Type&Types != 0 && len(stack) == 1 {
 		//a bool
 		tok := Token{
 			Type:       stack[0].Type,
@@ -440,11 +437,23 @@ func (p *Parser) prepareType(argument *function, stack []Token) {
 			typ: tok,
 		}
 		argument.OutputTypes = append(argument.OutputTypes, retTyp)
-	} else if stack[0].Type == FUNCTION_DEFINE {
-		p.PrepareFunctionSignature(argument, stack[1:])
-	} else {
-		p.error("not defined type %v", stack[1].Identifier)
+		return
 	}
+
+	if stack[0].Identifier == "[" {
+		stack, argument.Dimension = p.readStaticDimension(stack, []int64{})
+	}
+
+	if stack[0].Type == FUNCTION_DEFINE {
+		p.PrepareFunctionSignature(argument, stack[1:])
+		return
+	}
+	if stack[0].Type&Types != 0 && len(stack) == 1 {
+		p.prepareReturns(argument, stack)
+		return
+	}
+
+	p.error("invalid type declaration")
 }
 
 func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
@@ -664,7 +673,6 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 			//inputs are the condition + optional assignment after the loop
 			//fktInput is all inside the for statement {}
 		}
-		forFkt.taskStack.add(re)
 
 		// a ; b ;c
 		var arguments []Tokens
@@ -743,6 +751,7 @@ func (p *Parser) PreCompile(currentCircuit *function, tokens []Token) {
 		default:
 			panic("")
 		}
+		forFkt.taskStack.add(re)
 		p.PreCompile(currentCircuit, rest)
 
 		return

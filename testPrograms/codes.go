@@ -37,6 +37,26 @@ var sudoku = func() []*big.Int {
 	return res
 }
 var TestPrograms = []TraceCorrectnessTest{
+	{
+		Skip: false,
+		IO: []InOut{{
+			Inputs: []*big.Int{big.NewInt(int64(3))},
+		}},
+
+		Code: `
+func main(x field) field{
+	return (1*fubunaci(8,dyn))*(x*x)*dyn[3]
+}
+var dyn = [9]field{1,1,0,0,0,0,0,0,0}
+
+func fubunaci(a field, dyn [9]field) field{
+	var i = 12
+	for (i = 2 ; i<a;i=i+1){
+		dyn[i] = dyn[i-1]+dyn[i-2]
+	}
+    return dyn[a-1]
+}
+`},
 
 	{
 		Skip: false,

@@ -220,7 +220,6 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 		}
 		toOverload := getArrayElement(currentCircuit.resolveArrayName(currentConstraint.Inputs), arrayEntries.Inputs)
 		return currentCircuit.compile(toOverload, gateCollector)
-
 	case IF_FUNCTION_CALL:
 
 		ifElseCircuits := currentConstraint.FktInputs[0]
@@ -326,7 +325,6 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 			arg := currentConstraint.Inputs[0]
 			currentCircuit.SPLIT(true, arg, gateCollector)
 			return emptyRets()
-
 		case "add":
 			if len(currentConstraint.Inputs) != 2 {
 				panic("addition constraint requires 2 arguments")

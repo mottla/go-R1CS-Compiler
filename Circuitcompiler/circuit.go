@@ -413,13 +413,8 @@ func (currentCircuit *function) getsLoadedWith(newInputs []*function) {
 		return
 	}
 
-	out := newInputs[0].outputs()
-	if len(out) != 1 {
-		//a()-> x,y
-		//so we dont allos foo( a()), even when foo takes two arguments. should we stay with go syntax?
-		panic("")
-	}
-	b, err := currentCircuit.InputTypes[0].compare(out[0])
+	out := newInputs[0]
+	b, err := out.hasEqualDescription2(currentCircuit.InputTypes[0])
 	if b {
 		//do we need this map assignment?
 		currentCircuit.functions[currentCircuit.InputIdentifiers[0]] = newInputs[0]
@@ -451,6 +446,7 @@ func (currentCircuit *function) resolveArrayName(inputs []*Task) (indexPos []int
 
 func (currentCircuit *function) execute(gateCollector *gateContainer) (bundle, bool) {
 
+	currentCircuit = currentCircuit.flatCopy()
 	//the function is not ready to execute. So we return it entirely
 	if len(currentCircuit.InputTypes) != 0 {
 		return bundle{returnTyped{
@@ -469,7 +465,12 @@ func (currentCircuit *function) execute(gateCollector *gateContainer) (bundle, b
 	}
 
 	//the function had no return call
-
+	if len(currentCircuit.Dimension) != 0 {
+		return bundle{returnTyped{
+			facs:              nil,
+			preloadedFunction: currentCircuit,
+		}}, false
+	}
 	//now there is some unelegant shit going on.
 	if len(currentCircuit.OutputTypes) == 0 {
 		return emptyRets()
