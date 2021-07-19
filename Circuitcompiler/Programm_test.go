@@ -3,6 +3,7 @@ package Circuitcompiler
 import (
 	"fmt"
 	"github.com/mottla/go-R1CS-Compiler/testPrograms"
+	"github.com/mottla/go-R1CS-Compiler/utils"
 	"github.com/stretchr/testify/assert"
 	"math/big"
 	"testing"
@@ -91,8 +92,6 @@ func TestForProgram(t *testing.T) {
 	func test()(bool,field){
 		return true,3
 	}
-
-
 `
 	program := Parse(code)
 	container := program.Execute()
@@ -116,21 +115,14 @@ func TestForProgram(t *testing.T) {
 	fmt.Println(w)
 }
 
-func jese() {
-	fmt.Println(a)
-}
-
-var a = true
-
-func TestCorrectness(t *testing.T) {
-
-	for _, test := range testPrograms.TestPrograms {
+func TestFibonacciPrograms(t *testing.T) {
+	for _, test := range testPrograms.TestFibonacci {
 		if test.Skip {
 			continue
 		}
 
 		fmt.Println("\n unreduced")
-		fmt.Println(test.Code)
+		utils.PrintWithLineNumbering(test.Code)
 		program := Parse(test.Code)
 
 		container := program.Execute()
@@ -145,6 +137,45 @@ func TestCorrectness(t *testing.T) {
 
 		for _, io := range test.IO {
 			inputs := CombineInputs(program.GetMainCircuit().InputIdentifiers, io.Inputs)
+
+			fmt.Println("input")
+			fmt.Println(inputs)
+
+			w, err := CalculateTrace(r1cs, inputs)
+			assert.NoError(t, err)
+			fmt.Printf("witness len %v \n ", len(w))
+			fmt.Println(w)
+
+		}
+	}
+}
+
+func TestSudokuPrograms(t *testing.T) {
+
+	for _, test := range testPrograms.TestSudoku {
+		if test.Skip {
+			continue
+		}
+
+		fmt.Println("\n unreduced")
+		utils.PrintWithLineNumbering(test.Code)
+		program := Parse(test.Code)
+
+		container := program.Execute()
+		gates := container.OrderedGates()
+		fmt.Println("\n generating R1CS")
+		r1cs := program.GatesToR1CS(gates)
+		fmt.Printf("number of gates %v, witness length %v \n ", r1cs.NumberOfGates, r1cs.WitnessLength)
+		//
+		//fmt.Println(r1cs.L)
+		//fmt.Println(r1cs.R)
+		//fmt.Println(r1cs.O)
+
+		for _, io := range test.IO {
+			strs := []string{}
+			ArrayStringBuild([]int64{9, 9}, "sudoku", &strs)
+
+			inputs := CombineInputs(strs, io.Inputs)
 
 			fmt.Println("input")
 			fmt.Println(inputs)

@@ -380,7 +380,7 @@ func (p *Parser) prepareArguments(current *function, stack []Token) {
 		return
 	}
 	if len(stack) == 1 {
-		p.error("need argument + type")
+		p.error("function needs argument + type")
 	}
 
 	if stack[0].Type != IDENTIFIER_VARIABLE {
@@ -428,10 +428,10 @@ func (p *Parser) prepareType(argument *function, stack []Token) {
 	if stack[0].Type&Types != 0 && len(stack) == 1 {
 		//a bool
 		tok := Token{
-			Type:       stack[0].Type,
-			isArgument: true,
-			//TODO hmm I dont like this
-			value: bigOne,
+			Type: stack[0].Type,
+			//isArgument: true,
+			////TODO hmm I dont like this
+			//value: bigOne,
 		}
 		retTyp := returnTypes{
 			typ: tok,

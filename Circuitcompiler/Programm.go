@@ -67,6 +67,15 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 	switch currentConstraint.Description.Type {
 	case IDENTIFIER_VARIABLE:
 
+		if currentCircuit.Name == "main" {
+			for _, s := range currentCircuit.InputIdentifiers {
+				if s == currentConstraint.Description.Identifier {
+					fk, _ := currentCircuit.functions[s]
+					tok := Token{Identifier: currentConstraint.Description.Identifier, Type: fk.OutputTypes[0].typ.Type, isArgument: true, value: bigOne}
+					return tok.toBundle(), false
+				}
+			}
+		}
 		if f, ex := currentCircuit.findFunctionInBloodline(currentConstraint.Description.Identifier); ex {
 			if len(f.InputIdentifiers) == 0 {
 				return f.execute(gateCollector)
@@ -212,13 +221,32 @@ func (currentCircuit *function) compile(currentConstraint *Task, gateCollector *
 		}
 		return emptyRets()
 	case ARRAY_CALL:
-		f, _ := currentCircuit.findFunctionInBloodline(currentConstraint.Description.Identifier)
+		contextHoldingArray, _ := currentCircuit.getCircuitContainingFunctionInBloodline(currentConstraint.Description.Identifier)
+		address := currentCircuit.resolveArrayName(currentConstraint.Inputs)
+		arrayFkt := contextHoldingArray.functions[currentConstraint.Description.Identifier]
+		if contextHoldingArray.Name == "main" {
+			//we access an array that was given as input to the main function.
+			//however I am not sure if this assertion is always correct..
+			str := currentConstraint.Description.Identifier
+			for _, v := range address {
+				str += fmt.Sprintf("[%v]", v)
+			}
+			tok := Token{
+				Identifier: str,
+				//problems ahead
+				Type:       arrayFkt.OutputTypes[0].typ.Type,
+				value:      bigOne,
+				isArgument: true,
+			}
+			return tok.toBundle(), false
 
-		s, arrayEntries := f.taskStack.PeekLast()
-		if !s || len(f.Dimension) == 0 {
-			panic("")
 		}
-		toOverload := getArrayElement(currentCircuit.resolveArrayName(currentConstraint.Inputs), arrayEntries.Inputs)
+
+		s, arrayEntries := arrayFkt.taskStack.PeekLast()
+		if !s || len(arrayFkt.Dimension) == 0 {
+			panic(fmt.Sprintf("%v is not an array.", currentConstraint.Description.Identifier))
+		}
+		toOverload := getArrayElement(address, arrayEntries.Inputs)
 		return currentCircuit.compile(toOverload, gateCollector)
 	case IF_FUNCTION_CALL:
 
@@ -964,6 +992,18 @@ func (p *Program) GatesToR1CS(mGates []*Gate) (r1CS *R1CS) {
 		indexMap[v] = len(indexMap)
 	}
 	for _, v := range p.GetMainCircuit().InputIdentifiers {
+		fk, _ := p.GetMainCircuit().functions[v]
+		if len(fk.Dimension) != 0 {
+			strs := []string{}
+			ArrayStringBuild(fk.Dimension, v, &strs)
+			for _, s := range strs {
+				if _, ex := indexMap[s]; ex {
+					continue
+				}
+				indexMap[s] = len(indexMap)
+			}
+			continue
+		}
 		if _, ex := indexMap[v]; ex {
 			continue
 		}

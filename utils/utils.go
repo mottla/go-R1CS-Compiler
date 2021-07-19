@@ -1,9 +1,11 @@
 package utils
 
 import (
+	"fmt"
 	bn256 "github.com/mottla/go-R1CS-Compiler/pairing"
 	"math"
 	"math/big"
+	"strings"
 )
 
 var bigZero = big.NewInt(int64(0))
@@ -167,4 +169,14 @@ func Mod(a, b int) int {
 		r += b
 	}
 	return r
+}
+
+func PrintWithLineNumbering(s string) {
+	y := func(c rune) bool {
+		return c == '\n'
+	}
+	testArray := strings.FieldsFunc(s, y)
+	for i, w := range testArray {
+		fmt.Println(i, w)
+	}
 }
